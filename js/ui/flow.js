@@ -217,6 +217,8 @@ export function mountFlow(root, app, opts) {
         draft[view].ai = { ...out[view].lm };
         draft[view].source = out[view].source;
       }
+      draft.side.dir = out.side.dir;
+      draft.front.skin = out.front.skin;
       step(stepVerify, 'front');
     });
   }
@@ -252,7 +254,7 @@ export function mountFlow(root, app, opts) {
       app.go(`#/scan/${scan.id}/overview`);
     });
   }
-  const pack = (d) => ({ url: d.url, w: d.w, h: d.h, lm: d.lm, ai: d.ai, source: d.source });
+  const pack = (d) => ({ url: d.url, w: d.w, h: d.h, lm: d.lm, ai: d.ai, source: d.source, dir: d.dir });
 
   // start
   if (opts.mode === 'edit') step(stepReview);

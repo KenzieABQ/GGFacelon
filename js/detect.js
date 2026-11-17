@@ -12,7 +12,13 @@ const MP_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/v
 const MP_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VER}/wasm`;
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task';
 
+const SEG_MODEL = 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite';
+// selfie_multiclass categories
+const C_BG = 0, C_HAIR = 1, C_BODY = 2, C_FACE = 3, C_CLOTHES = 4, C_OTHER = 5;
+const isSkinClass = (c) => c === C_BODY || c === C_FACE;
+
 let landmarkerPromise = null;
+let segmenterPromise = null;
 
 export function loadDetector() {
   if (landmarkerPromise) return landmarkerPromise;
@@ -37,6 +43,53 @@ export function loadDetector() {
     throw e;
   });
   return landmarkerPromise;
+}
+
+// Person segmentation (hair / face skin / body skin / clothes / background). Works at any head angle and
+// doesn't depend on background colour, so it drives the profile outline, hairline, ears and neck.
+export function loadSegmenter() {
+  if (segmenterPromise) return segmenterPromise;
+  segmenterPromise = (async () => {
+    const { ImageSegmenter, FilesetResolver } = await import(MP_URL);
+    const fileset = await FilesetResolver.forVisionTasks(MP_WASM);
+    return ImageSegmenter.createFromOptions(fileset, {
+      baseOptions: { modelAssetPath: SEG_MODEL, delegate: 'CPU' },
+      runningMode: 'IMAGE',
+      outputCategoryMask: true,
+      outputConfidenceMasks: false,
+    });
+  })().catch((e) => {
+    segmenterPromise = null;
+    throw e;
+  });
+  return segmenterPromise;
+}
+
+// Returns { at(x, y) → category } in image pixel coordinates, or null if unavailable.
+async function runSeg(img) {
+  try {
+    const seg = await loadSegmenter();
+    const r = seg.segment(img);
+    const mk = r.categoryMask;
+    const mw = mk.width, mh = mk.height;
+    const data = mk.getAsUint8Array().slice();
+    if (r.close) r.close();
+    const W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    const sx = mw / W, sy = mh / H;
+    let skinN = 0;
+    for (let i = 0; i < data.length; i += 7) if (isSkinClass(data[i])) skinN++;
+    if (skinN < (data.length / 7) * 0.01) return null; // nothing person-like found
+    return {
+      at(x, y) {
+        const xi = Math.min(mw - 1, Math.max(0, Math.round(x * sx)));
+        const yi = Math.min(mh - 1, Math.max(0, Math.round(y * sy)));
+        return data[yi * mw + xi];
+      },
+    };
+  } catch (e) {
+    console.warn('segmenter unavailable', e);
+    return null;
+  }
 }
 
 // Run the mesh. Returns array of {x,y} in image pixels, or null.
@@ -170,7 +223,7 @@ function lateral(m, ids, centerX, sign) {
   return best;
 }
 
-function frontFromMesh(m, px) {
+function frontFromMesh(m, px, seg) {
   const cx = (m[468].x + m[473].x) / 2;
   const s = Math.sign(m[473].x - m[468].x) || 1; // +1: subject's left is image right (normal photo)
   const lm = {
@@ -210,15 +263,43 @@ function frontFromMesh(m, px) {
     lm['temple_' + side] = { x: t.x, y: bt.y - Math.abs(bt.y - t.y) * 0.55 };
   }
   const faceH = dist(pick(m, 10), lm.me);
-  // Ears: walk sideways from the cheekbone and keep the outermost skin-coloured pixel (the ear rim).
   const cheekSkin = avgSkin(px, [lerp(lm.zy_r, lm.prn, 0.45), lerp(lm.zy_l, lm.prn, 0.45)]);
+  const skinAt = seg ? (x, y) => isSkinClass(seg.at(x, y)) : null;
+  // Ears: walk sideways from the cheekbone and keep the outermost skin pixel (the ear rim).
   for (const [side, sign] of [['r', -s], ['l', s]]) {
     const zy = lm['zy_' + side];
     const y = (lm['pupil_' + side].y + lm.sn.y) / 2;
-    const out = outermostSkin(px, { x: zy.x, y }, sign, faceH * 0.2, cheekSkin);
+    let out = null;
+    if (skinAt) {
+      let gap = 0;
+      for (let t = 0; t <= faceH * 0.22; t += 1) {
+        const x = zy.x + sign * t;
+        if (skinAt(x, y)) { out = { x, y }; gap = 0; } else if (out && ++gap > faceH * 0.04) break;
+      }
+    } else {
+      out = outermostSkin(px, { x: zy.x, y }, sign, faceH * 0.2, cheekSkin);
+    }
     const ear = out && Math.abs(out.x - zy.x) > faceH * 0.012 ? out : { x: zy.x + sign * faceH * 0.05, y };
     lm['ear_' + side] = ear;
-    lm['earTop_' + side] = { x: zy.x + (ear.x - zy.x) * 0.3, y: lm['brT_' + side].y + faceH * 0.02 };
+    // Ear root: where the top of the ear meets the head — follow the ear rim upward while it stays skin.
+    let top = { x: zy.x + (ear.x - zy.x) * 0.3, y: lm['brT_' + side].y + faceH * 0.02 };
+    if (skinAt && out) {
+      let yy = y, xx = ear.x;
+      for (; yy > lm['brT_' + side].y - faceH * 0.06; yy -= 1) {
+        // outermost skin on this row, scanning inward from just outside the ear
+        let found = null;
+        for (let t = 0; t <= Math.abs(ear.x - zy.x) + faceH * 0.02; t += 1) {
+          const x = ear.x + sign * faceH * 0.01 - sign * t;
+          if (skinAt(x, yy)) { found = x; break; }
+        }
+        if (found == null || Math.abs(found - xx) > faceH * 0.05) break;
+        xx = found;
+      }
+      // the rim usually curls inward near the top; if tracking stopped low, fall back to brow-tail height
+      const browY = lm['brT_' + side].y + faceH * 0.02;
+      top = { x: zy.x + (xx - zy.x) * 0.35, y: yy < y - faceH * 0.1 ? yy + faceH * 0.01 : browY };
+    }
+    lm['earTop_' + side] = top;
   }
   // Neck: below the jaw, walk out from the centre line to the skin edge on each side.
   const ny = lm.me.y + faceH * 0.12;
@@ -226,17 +307,36 @@ function frontFromMesh(m, px) {
   const neckSkin = px.at(nc.x, nc.y, 4);
   const halfJaw = Math.abs(lm.go_l.x - lm.go_r.x) / 2;
   for (const [side, sign] of [['r', -s], ['l', s]]) {
-    const hit = findSkinEdge(px, nc, { x: sign, y: 0 }, halfJaw * 1.4, neckSkin);
-    const ok = hit && Math.abs(hit.x - nc.x) > halfJaw * 0.55;
+    let hit = null;
+    if (skinAt && skinAt(nc.x, ny)) {
+      let x = nc.x;
+      for (let t = 0; t <= halfJaw * 1.5; t += 1) { if (!skinAt(nc.x + sign * t, ny)) break; x = nc.x + sign * t; }
+      hit = { x: x + sign * 2, y: ny };
+    } else {
+      hit = findSkinEdge(px, nc, { x: sign, y: 0 }, halfJaw * 1.4, neckSkin);
+    }
+    const ok = hit && Math.abs(hit.x - nc.x) > halfJaw * 0.55 && Math.abs(hit.x - nc.x) < halfJaw * 1.4;
     lm['neck_' + side] = ok ? { x: hit.x - sign * 2, y: ny } : { x: nc.x + sign * halfJaw * 0.82, y: ny };
   }
-  // Hairline: walk up from the mesh's top-of-forehead until the colour leaves skin.
+  // Hairline: walk up the centre line from the brows until skin turns into hair (or background if bald).
   const top = pick(m, 10), g = lm.glabella;
   const up = sub(top, g), L = len(up) || 1;
   const dir = { x: up.x / L, y: up.y / L };
-  const skin = px.at(...Object.values(lerp(g, top, 0.6)), 4);
-  const hit = findSkinEdge(px, lerp(g, top, 0.75), dir, L * 1.4, skin);
-  lm.trichion = hit || add(top, mul(dir, L * 0.25));
+  let tri = null;
+  if (skinAt) {
+    let run = 0, last = null;
+    for (let t = L * 0.3; t <= L * 2.2; t += 1) {
+      const p = { x: g.x + dir.x * t, y: g.y + dir.y * t };
+      if (p.y < 1) break;
+      if (skinAt(p.x, p.y)) { run = 0; last = p; } else if (++run > Math.max(3, faceH * 0.012)) break;
+    }
+    if (last && dist(last, g) > L * 0.5) tri = last;
+  }
+  if (!tri) {
+    const skin = px.at(...Object.values(lerp(g, top, 0.6)), 4);
+    tri = findSkinEdge(px, lerp(g, top, 0.75), dir, L * 1.4, skin) || add(top, mul(dir, L * 0.25));
+  }
+  lm.trichion = tri;
   return { lm, skin: cheekSkin };
 }
 
@@ -332,7 +432,7 @@ export function refitTemplate(view, lm, confirmed) {
 // ---------- profile from silhouette (used when the mesh can't see a 90° profile) ----------
 // Traces the face outline (background colour or skin colour), then finds nose, lips and chin as
 // bumps/dips on it. Vertical spacing is predicted from the person's own front landmarks.
-function profileFromSilhouette(img, front, skinRGB) {
+function profileFromSilhouette(img, front, skinRGB, seg, pxFull, forceDir, mode = seg ? 'face' : 'color') {
   const W0 = img.naturalWidth || img.width, H0 = img.naturalHeight || img.height;
   const sc = Math.min(1, 720 / H0);
   const w = Math.round(W0 * sc), h = Math.round(H0 * sc);
@@ -352,8 +452,19 @@ function profileFromSilhouette(img, front, skinRGB) {
   const skin = skinRGB || [190, 140, 115];
 
   const raw = new Uint8Array(w * h);
+  const body = seg ? new Uint8Array(w * h) : null; // face + body skin (neck, ears)
   let hairX = 0, hairN = 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (seg) {
+      // Segmentation. 'face' traces face-skin only (another person or the body can't leak in);
+      // 'skin' also accepts body skin (some photos label parts of the face as body skin).
+      // Hair is tracked separately to tell which way the face points.
+      const c = seg.at(x / sc, y / sc);
+      body[y * w + x] = isSkinClass(c) ? 1 : 0;
+      if (c === C_HAIR) { hairX += x; hairN++; }
+      // 'skin' also takes 'other' (accessories, drawn marks) so they don't punch holes in the outline
+      if (mode !== 'color') { raw[y * w + x] = mode === 'face' ? (c === C_FACE ? 1 : 0) : (body[y * w + x] || c === C_OTHER ? 1 : 0); continue; }
+    }
     const c = rgb(x, y);
     // Trace skin, not hair: hair can stick out further than the nose. A plain background adds a second check.
     const isSkin = chromaDist(c, skin) < 0.065 && c[0] + c[1] + c[2] > 120;
@@ -428,22 +539,40 @@ function profileFromSilhouette(img, front, skinRGB) {
     const ys = [];
     for (let y = Math.round(yTop + span * 0.12); y < yTop + span * 0.66; y++) if (!Number.isNaN(f[y])) ys.push(y);
     if (!ys.length) return { dir, f, bump: -1 };
-    const vals = ys.map((y) => f[y]).sort((a, b) => a - b);
-    let best = ys[0];
-    for (const y of ys) if (f[y] > f[best]) best = y;
-    const atEdge = f[best] >= w - 3;
-    return { dir, f, prnY: best, bump: atEdge ? -1 : f[best] - vals[vals.length >> 1] };
+    // Nose tip = the sharpest peak: how far a row sticks out beyond the dips just above (nasion) and
+    // just below (nose base). A wide flat region (hair, a shoulder, another person) scores low.
+    const a = Math.round(span * 0.14), b = Math.max(2, Math.round(span * 0.02));
+    const minIn = (y0, y1) => { let m = Infinity; for (let y = y0; y <= y1; y++) if (y >= 0 && y < h && !Number.isNaN(f[y])) m = Math.min(m, f[y]); return m; };
+    let best = null, bestP = -Infinity;
+    for (const y of ys) {
+      if (f[y] >= w - 3) continue; // touching the image edge: not a usable nose
+      const p = f[y] - Math.max(minIn(y - a, y - b), minIn(y + b, y + a));
+      if (Number.isFinite(p) && p > bestP) { bestP = p; best = y; }
+    }
+    if (best == null) return { dir, f, bump: -1 };
+    return { dir, f, prnY: best, bump: bestP };
   });
-  // Facing: hair sits behind the face. Fall back to the bigger nose-like bump if that's unclear.
+  // Facing: hair sits behind the face, and the nose makes the biggest bump on the front outline.
+  // Both cues vote; a forced direction (from the "flip" button) overrides them.
   let S = sides[0].bump >= sides[1].bump ? sides[0] : sides[1];
-  if (hairN > w * h * 0.01) {
+  if (forceDir) S = sides.find((q) => q.dir === forceDir);
+  else if (hairN > w * h * 0.005) {
     const hx = hairX / hairN;
-    if (Math.abs(hx - skinX) > w * 0.03) S = hx < skinX ? sides[0] : sides[1];
+    const hairVote = hx < skinX ? sides[0] : sides[1];
+    const other = hairVote === sides[0] ? sides[1] : sides[0];
+    // Segmented hair is a reliable cue (the ear makes a sharp bump on the back outline too, so bumps
+    // alone can mislead). The colour fallback's "hair" is just dark pixels, so a much bigger bump wins there.
+    const strongBump = other.bump > hairVote.bump * 1.8 && other.bump > h * 0.02;
+    if (Math.abs(hx - skinX) > w * 0.02 && (mode !== 'color' || !strongBump)) S = hairVote;
   }
-  if (S.bump < h * 0.01) return null;
+  if (!S || S.bump < h * 0.008) return null;
   const fwd = S.dir, f = S.f;
   const X = (fv) => (fwd > 0 ? fv : w - 1 - fv); // forward coord → image x
-  const fy = (y) => { y = Math.round(y); return y >= 0 && y < h && !Number.isNaN(f[y]) ? f[y] : NaN; };
+  const fy0 = (y) => { y = Math.round(y); return y >= 0 && y < h && !Number.isNaN(f[y]) ? f[y] : NaN; };
+  // Below the nose, lips and chin always sit behind the nose tip; anything further forward belongs to
+  // something else (another person, a hand, a collar) and is ignored.
+  const fPrn = fy0(S.prnY);
+  const fy = (y) => { const v = fy0(y); return Math.round(y) > S.prnY + 2 && v > fPrn - 1 ? NaN : v; };
   const P = (y) => ({ x: X(fy(y)), y });
   const argBest = (y0, y1, score) => {
     let b = null, bv = -Infinity;
@@ -502,15 +631,28 @@ function profileFromSilhouette(img, front, skinRGB) {
     while (yy < h - 1 && F(xx, yy)) yy++;
     if (yy > pogY && yy < meY0 + faceH * 0.08) me.y = yy;
   }
-  // neck line and cervical point
+  // neck line and cervical point. With segmentation the neck is body skin (not face skin), searched
+  // only behind the chin so nobody else in the frame can be picked up.
+  const pogF = fy(pogY);
+  const neckF = (y) => {
+    y = Math.round(y);
+    if (!body) return fy(y);
+    if (y < 0 || y >= h) return NaN;
+    for (let t = Math.round(pogF + faceH * 0.02); t > pogF - faceH * 0.9; t--) {
+      const x = Math.round(X(t));
+      if (x < 2 || x >= w - 2) continue;
+      if (body[y * w + x] && body[y * w + x - fwd] && body[y * w + x - 2 * fwd]) return t;
+    }
+    return NaN;
+  };
   const y1 = me.y + faceH * 0.2, y2 = me.y + faceH * 0.36;
-  const n1 = fy(y1), n2 = fy(y2);
+  const n1 = neckF(y1), n2 = neckF(y2);
   let c = null, neck = null;
   if (Number.isFinite(n1) && Number.isFinite(n2)) {
-    neck = P(y2);
+    neck = { x: X(n2), y: y2 };
     const lineF = (y) => n1 + ((n2 - n1) * (y - y1)) / (y2 - y1);
     let yc = y1;
-    for (let y = Math.round(y1); y > me.y; y--) { if (fy(y) - lineF(y) > faceH * 0.03) break; yc = y; }
+    for (let y = Math.round(y1); y > me.y; y--) { const v = neckF(y); if (!Number.isFinite(v) || v - lineF(y) > faceH * 0.03) break; yc = y; }
     c = { x: X(lineF(yc)), y: yc };
   }
   // hairline: the skin outline of the forehead ends where hair starts (checked against the front photo)
@@ -523,7 +665,7 @@ function profileFromSilhouette(img, front, skinRGB) {
       if (!Number.isFinite(fv) || Math.abs(fv - prev) > faceH * 0.02) break;
       prev = fv;
     }
-    if (Math.abs(y + 1 - trP) < faceH * 0.07) trY = y + 1;
+    if (Math.abs(y + 1 - trP) < faceH * (seg ? 0.14 : 0.07)) trY = y + 1;
   }
   trY = Math.min(trY, gY - faceH * 0.08);
   // forehead points: follow the outline upward only while it stays continuous; past a jump
@@ -562,12 +704,46 @@ function profileFromSilhouette(img, front, skinRGB) {
   let cmy = Math.round(prnY);
   while (cmy < snY + 4 && F(Math.round(cmx), cmy)) cmy++;
   lm.cm = { x: cmx, y: Math.min(cmy, snY) };
+  // Ear: the back-most skin at ear height is the back rim of the ear; the ear canal sits ~0.14 face
+  // heights in front of it. Used to anchor the template so the Frankfort plane follows the real ear.
+  const faceHn = py('me') - nY;
+  let earX = null;
+  {
+    const ys = [];
+    for (let y = Math.round(nY + 0.3 * (snY - nY)); y <= snY + 0.3 * (snY - nY); y += 2) {
+      const fF = fy(y);
+      if (!Number.isFinite(fF)) continue;
+      let back = null;
+      for (let t = Math.round(faceHn * 1.5); t >= faceHn * 0.5; t--) {
+        const x = Math.round(X(fF - t));
+        if (x < 0 || x >= w) continue;
+        const mk = body || op;
+        if (mk[y * w + x] && mk[y * w + Math.min(w - 1, x + 1)]) { back = fF - t; break; }
+      }
+      if (back != null) ys.push(back);
+    }
+    if (ys.length > 4) {
+      ys.sort((a, b) => a - b);
+      earX = ys[Math.floor(ys.length * 0.2)] + faceHn * 0.14; // forward coordinate of the ear canal
+      const dSn = fy(snY) - earX; // ear canal → nose base, horizontally
+      if (!(dSn > faceHn * 0.75 && dSn < faceHn * 1.3)) earX = null;
+    }
+  }
   // interior points from the reference template, fitted to the outline points
   const ref = refPoints('side');
   const mir = (p) => (fwd > 0 ? p : { x: 767 - p.x, y: p.y });
-  const keys = ['g', 'n', 'prn', 'sn', 'pog', 'me'];
-  const T = fitSimilarity(keys.map((q) => mir(ref[q])), keys.map((q) => lm[q]));
-  for (const q of ['tragus', 'or', 'cornea', 'go', 'ramus', 'ac']) lm[q] = T(mir(ref[q]));
+  // Fit only on upper/mid-face outline points: including the chin would let a recessed chin rotate the
+  // Frankfort plane and partly cancel itself out in the profile angles.
+  const keys = ['g', 'n', 'sn', 'sto'];
+  let T = fitSimilarity(keys.map((q) => mir(ref[q])), keys.map((q) => lm[q]));
+  if (earX != null) {
+    // add the ear canal (template height, detected depth) as a fifth anchor
+    const tg = T(mir(ref.tragus));
+    lm.tragus = { x: X(earX), y: tg.y };
+    T = fitSimilarity([...keys, 'tragus'].map((q) => mir(ref[q])), [...keys, 'tragus'].map((q) => lm[q]));
+  }
+  for (const q of ['or', 'cornea', 'go', 'ramus', 'ac']) lm[q] = T(mir(ref[q]));
+  if (earX == null) lm.tragus = T(mir(ref.tragus));
   if (!c) { lm.c = T(mir(ref.c)); lm.neck = T(mir(ref.neck)); } else { lm.c = c; lm.neck = neck; }
   // Forehead: a line up from the glabella, perpendicular to the Frankfort plane and leaning back ~8°.
   // The traced outline is used only where it agrees with that line (bangs and hair often don't).
@@ -584,36 +760,67 @@ function profileFromSilhouette(img, front, skinRGB) {
       lm[key] = Math.abs(cx - L.x) < faceH * 0.015 ? { x: cx, y: L.y } : L;
     }
   }
-  // back to full-resolution pixels
+  // back to full-resolution pixels, then snap outline points to the sharpest edge nearby
   const out = {};
   for (const q in lm) out[q] = { x: lm[q].x / sc, y: lm[q].y / sc };
+  if (pxFull) {
+    const r = Math.max(3, Math.round((faceH / sc) * 0.012));
+    for (const q of ['g', 'n', 'prn', 'sn', 'ls', 'sto', 'li', 'sm', 'pog', 'fh']) out[q] = snapSilhouette(pxFull, out[q], fwd, r);
+  }
+  out._dir = fwd;
+  // Plausibility: the profile's vertical spacing should match the front photo's
+  // (nose base → chin vs nasion → nose base), and the nose should clearly stick out.
+  const ratioF = (Fy('me') - Fy('sn')) / ((Fy('sn') - Fy('nasion')) || 1);
+  const ratioP = (me.y - snY) / ((snY - nY) || 1);
+  out._score = -Math.abs(Math.log(Math.max(1e-3, ratioP / ratioF))) - (S.bump < faceH * 0.04 ? 0.3 : 0);
   return out;
 }
 
-// Public entry: returns { lm, mesh, source: 'ai' | 'outline' | 'template', error? }
-// For the profile, pass { front, skin } from the frontal result so the outline tracer can scale itself.
+// Public entry: returns { lm, mesh, source: 'ai' | 'outline' | 'template', dir?, error? }
+// For the profile, pass { front, skin } from the frontal result so the outline tracer can scale itself,
+// and { forceDir: 1 | -1 } to force the facing direction (1 = facing image right).
 export async function detect(view, img, opts = {}) {
   let mesh = null, error = null;
-  try {
-    mesh = await runMesh(img);
-  } catch (e) {
-    error = 'model';
+  const segP = runSeg(img);
+  if (!(view === 'side' && opts.forceDir)) {
+    try {
+      mesh = await runMesh(img);
+    } catch (e) {
+      error = 'model';
+    }
   }
+  const seg = await segP;
   const px = pixelReader(img);
   if (view === 'front') {
     if (!mesh) return { lm: templateFor(view, img), mesh: null, source: 'template', error: error || 'noface' };
-    const r = frontFromMesh(mesh, px);
-    return { lm: r.lm, skin: r.skin, mesh, source: 'ai' };
+    const r = frontFromMesh(mesh, px, seg);
+    return { lm: r.lm, skin: r.skin, mesh, source: 'ai', seg: !!seg };
   }
   // A profile at ~90° is usually invisible to the mesh model; prefer it when it does see a face.
-  if (mesh && plausibleProfileMesh(mesh)) return { lm: sideFromMesh(mesh, px), mesh, source: 'ai' };
-  if (opts.front) {
-    try {
-      const lm = profileFromSilhouette(img, opts.front, opts.skin);
-      if (lm) return { lm, mesh: null, source: 'outline' };
-    } catch (e) { console.warn('outline tracer failed', e); }
+  if (mesh && plausibleProfileMesh(mesh) && !opts.forceDir) {
+    const lm = sideFromMesh(mesh, px);
+    return { lm, mesh, source: 'ai', dir: Math.sign(lm.prn.x - lm.tragus.x) || 1 };
   }
-  return { lm: templateFor(view, img), mesh: null, source: 'template', error: error || 'noface' };
+  if (opts.front) {
+    // Try several masks and keep the result whose proportions best match the front photo.
+    // 'skin' (face + body skin) is the most complete outline, so it wins unless another mask fits the
+    // front proportions clearly better.
+    let best = null;
+    for (const mode of seg ? ['skin', 'face', 'color'] : ['color']) {
+      try {
+        const lm = profileFromSilhouette(img, opts.front, opts.skin, seg, px, opts.forceDir, mode);
+        if (lm && (!best || lm._score > best._score + 0.25)) best = lm;
+      } catch (e) { console.warn('outline tracer failed', mode, e); }
+    }
+    if (best && best._score > -0.6) {
+      const dir = best._dir;
+      delete best._dir; delete best._score;
+      return { lm: best, mesh: null, source: 'outline', dir, seg: !!seg };
+    }
+  }
+  const lm = templateFor(view, img);
+  if (opts.forceDir === -1) for (const k in lm) lm[k] = { x: (img.naturalWidth || img.width) - lm[k].x, y: lm[k].y };
+  return { lm, mesh: null, source: 'template', dir: opts.forceDir || 1, error: error || 'noface' };
 }
 
 // A real profile has the nose tip far outside the eye corners; a near-frontal detection doesn't.
@@ -622,3 +829,4 @@ function plausibleProfileMesh(m) {
   const faceW = Math.abs(m[454].x - m[234].x);
   return eyeW < faceW * 0.45;
 }
+

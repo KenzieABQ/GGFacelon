@@ -125,10 +125,10 @@ const S = (o) => M.push({ view: 'side', w: 1, hm: true, ...o });
 
 // ── FRONT ──
 F({ id: 'middle_third', name: 'Middle Third', unit: '%', lo: 31.5, hi: 34.5, sig: 1.4, w: 1.5,
-  f: (N, c) => (c.middle / c.total) * 100,
+  f: (N, c) => (c.middle / (c.middle + c.lower)) * (200 / 3),
   ov: (N, c) => [vh({ x: 0, y: c.browY }, N.sn, c.midX), hw(N.brI_r, N.brI_l, c.browY, { dash: true }), hw(N.ala_r, N.ala_l, N.sn.y, { dash: true }), lab({ x: c.midX + c.ipd * 0.12, y: (c.browY + N.sn.y) / 2 })],
-  desc: 'Share of face height from the middle of the brows to the base of the nose. Balanced faces split into three roughly equal thirds.',
-  how: '(nose base − brow line) ÷ (chin − hairline) × 100' });
+  desc: 'Height from the middle of the brows to the base of the nose, on the facial‑thirds scale (33.3% = one equal third). Measured against brow‑to‑chin so a covered or receding hairline doesn’t distort it.',
+  how: '(nose base − brow line) ÷ (chin − brow line) × 66.7' });
 
 F({ id: 'one_eye_apart', name: 'One Eye Apart Test', unit: 'x', lo: 0.93, hi: 1.04, sig: 0.07,
   f: (N, c) => c.icd / c.eyeW,
@@ -261,10 +261,10 @@ F({ id: 'bigonial', name: 'Bigonial Width', unit: '%', lo: 85.5, hi: 94, sig: 4,
   how: 'jaw‑angle distance ÷ bizygomatic width × 100' });
 
 F({ id: 'lower_third', name: 'Lower Third', unit: '%', lo: 32.5, hi: 36, sig: 1.6, w: 1.5,
-  f: (N, c) => (c.lower / c.total) * 100,
+  f: (N, c) => (c.lower / (c.middle + c.lower)) * (200 / 3),
   ov: (N, c) => [vh(N.sn, N.me, c.midX), hw(N.ala_r, N.ala_l, N.sn.y, { dash: true }), hw(N.chin_r, N.chin_l, N.me.y, { dash: true }), lab({ x: c.midX + c.ipd * 0.12, y: (N.sn.y + N.me.y) / 2 })],
-  desc: 'Nose base to chin as a share of face height. A slightly longer lower third is typical of masculine faces.',
-  how: '(chin − nose base) ÷ (chin − hairline) × 100' });
+  desc: 'Nose base to chin on the facial‑thirds scale (33.3% = one equal third). A slightly longer lower third is typical of masculine faces. Measured against brow‑to‑chin so the hairline doesn’t distort it.',
+  how: '(chin − nose base) ÷ (chin − brow line) × 66.7' });
 
 F({ id: 'total_wh', name: 'Total Facial Width to Height Ratio', unit: 'x', lo: 1.33, hi: 1.38, sig: 0.05, w: 1.5,
   f: (N, c) => c.faceH / c.bizyg,
@@ -564,18 +564,68 @@ S({ id: 'gonial', name: 'Gonial Angle', unit: '°', lo: 112, hi: 123, sig: 6, ex
 export const METRICS = M;
 export const METRIC_BY_ID = Object.fromEntries(M.map((m) => [m.id, m]));
 
+// ───────────────────────── population norms ─────────────────────────
+// For each measurement: [ideal, typical spread among adult men (SD), typical male average].
+// A score is the distance from the ideal measured in units of how much men normally vary, so an
+// ordinary face lands mid-scale on most measurements and only rare faces reach 9–10.
+// The averages are only used to calibrate the pillar/overall scale (see CAL below).
+const NORMS = {
+  // front
+  middle_third: [32.8, 1.6, 33.4], one_eye_apart: [1.0, 0.09, 1.07], mouth_nose: [1.47, 0.12, 1.4],
+  cupid_depth: [16, 7, 14], neck_width: [96, 7, 88], iaa_jfa_dev: [4, 8, 18], iaa: [86, 5, 82],
+  top_third: [32.5, 2.5, 32], lower_third_prop: [34, 2.5, 33], fwhr: [2.0, 0.13, 1.86],
+  brow_low_set: [1.45, 0.35, 1.85], brow_length: [0.37, 0.03, 0.355], jaw_slope: [36, 6, 30],
+  ear_angle: [10, 8, 17], esr: [46, 1.8, 46.5], canthal_tilt: [6, 3, 3], cheekbone_height: [97, 7, 89],
+  ipd_mouth: [0.83, 0.06, 0.81], chin_philtrum: [2.3, 0.28, 2.05], bigonial: [91, 4.5, 85],
+  lower_third: [33.9, 1.6, 33.3], total_wh: [1.35, 0.07, 1.4], bitemporal: [89, 4, 87], eye_ar: [3.3, 0.3, 3.0],
+  brow_tilt: [2, 4, 2], nose_tip_pos: [0, 3, 2.5], icd_nose: [1.02, 0.1, 1.08], bridge_nose: [0.45, 0.07, 0.5],
+  lip_ratio: [1.65, 0.3, 1.5], mouth_corner: [1, 3, -1.5], jfa: [90, 8, 100], ear_ratio: [1.04, 0.06, 1.1],
+  midface_ratio: [1.03, 0.06, 1.0], symmetry: [0, 1.2, 2.0], cheek_lean: [82, 4, 88],
+  // side
+  orbital_vector: [1, 3, -3], nasal_wh: [0.63, 0.07, 0.6], nasofrontal: [120, 7, 130], submental: [108, 11, 122],
+  ramus_mandible: [0.7, 0.08, 0.66], frankfort_tip: [56, 5, 58], fh_recession: [92, 4, 88], mentolabial: [120, 11, 125],
+  nasal_projection: [0.58, 0.05, 0.57], convexity_g: [170, 5, 166], anterior_depth: [1.04, 0.07, 1.0],
+  holdaway: [11, 4, 13], browridge_incl: [12, 6, 8], upper_forehead: [8, 6, 10], convexity_n: [167, 5, 164],
+  total_convexity: [143, 5, 140], depth_height: [1.2, 0.07, 1.15], midface_proj: [6, 4, 4], z_angle: [77, 6, 73],
+  nasal_tip_angle: [110, 8, 108], tip_rotation: [18, 7, 22], nasolabial: [103, 10, 100], nasofacial: [33, 4, 33],
+  nasomental: [126, 5, 128], s_lower: [0, 3, 0.5], s_upper: [-1, 3, -0.5], e_lower: [-2, 3, -1], e_upper: [-4.5, 3, -3],
+  b_lower: [4.5, 3, 4], b_upper: [7, 3, 6], mpa: [21, 5.5, 26], gonion_mouth: [4, 6, 10], gonial: [117, 7, 123],
+};
+// Measurements where only the size of the deviation matters (ideal is 0, values can't be negative)
+const ONE_SIDED = new Set(['symmetry', 'nose_tip_pos']);
+// How much each measurement counts in Harmony. Core proportions that drive perceived attractiveness weigh
+// most; minor or hard-to-place measurements (ears, cupid's bow, lip lines, nose tip angles) weigh least.
+const WEIGHTS = {
+  fwhr: 3, middle_third: 3, lower_third: 3, esr: 3, canthal_tilt: 3, midface_ratio: 3, bigonial: 3, chin_philtrum: 3,
+  symmetry: 3, fh_recession: 3, convexity_g: 3, submental: 3, eye_ar: 3, cheekbone_height: 3,
+  total_wh: 1.2, brow_low_set: 2, jfa: 2, gonial: 2, mpa: 2, top_third: 1.2, one_eye_apart: 2, nasofrontal: 2,
+  z_angle: 2, e_upper: 2, e_lower: 2, neck_width: 2, lower_third_prop: 2,
+  mouth_nose: 1.2, icd_nose: 1.2, ipd_mouth: 1.2, lip_ratio: 1.2, bitemporal: 1.2, jaw_slope: 1.2, nasolabial: 1.2,
+  nasofacial: 1.2, nasomental: 1.2, ramus_mandible: 1.2, holdaway: 1.2, mentolabial: 1.2, total_convexity: 1.2,
+  convexity_n: 1.2, orbital_vector: 1.2, nasal_projection: 1.2, browridge_incl: 1.2,
+  cupid_depth: 0.6, brow_length: 0.6, brow_tilt: 0.6, mouth_corner: 0.6, nose_tip_pos: 0.6, bridge_nose: 0.6,
+  ear_angle: 0.6, ear_ratio: 0.6, iaa: 0.6, iaa_jfa_dev: 0.6, s_lower: 0.6, s_upper: 0.6, b_lower: 0.6, b_upper: 0.6,
+  frankfort_tip: 0.6, anterior_depth: 0.6, depth_height: 0.6, midface_proj: 0.6, nasal_tip_angle: 0.6,
+  tip_rotation: 0.6, nasal_wh: 0.6, upper_forehead: 0.6, gonion_mouth: 0.6,
+};
+// Score curve: flat top within ±TOL SD of the ideal, then a heavy-tailed fall-off of width WIDTH (in SD).
+const TOL = 0.2, WIDTH = 0.85;
+for (const m of M) {
+  const [ideal, sd, mean] = NORMS[m.id];
+  m.ideal = ideal; m.sd = sd; m.mean = mean;
+  m.oneSided = ONE_SIDED.has(m.id);
+  const half = (TOL + 0.5 * WIDTH) * sd; // inside this band the score stays ≥ 8.5
+  m.lo = m.oneSided ? ideal : ideal - half;
+  m.hi = ideal + half;
+  m.sig = sd;
+  m.w = WEIGHTS[m.id] ?? 1;
+}
+
 // ───────────────────────── scoring ─────────────────────────
 export function scoreValue(m, v) {
   if (!Number.isFinite(v)) return 0;
-  const { lo, hi, sig } = m;
-  if (v >= lo && v <= hi) {
-    const c = (lo + hi) / 2, h = (hi - lo) / 2;
-    const t = h > 0 ? Math.abs(v - c) / h : 0;
-    return 10 - 1.2 * t * t;
-  }
-  const d = v < lo ? lo - v : v - hi;
-  // heavier tail than a Gaussian: near misses cost about the same, far misses taper instead of flat-lining
-  return 8.8 * Math.pow(1 + 0.5 * (d / sig) ** 2, -1.5);
+  const z = Math.max(0, Math.abs(v - m.ideal) / m.sd - TOL);
+  return 10 * Math.pow(1 + (z * z) / (3 * WIDTH * WIDTH), -2);
 }
 
 export function fmt(m, v) {
@@ -597,94 +647,148 @@ export function barGeom(m) {
   return { a, b, at, lo: at(m.lo), hi: at(m.hi), loW: at(m.lo - m.sig * 1.5), hiW: at(m.hi + m.sig * 1.5) };
 }
 
+// Labels follow the population scale (average man ≈ 5.4, top 5% ≈ 7.0, top 1% ≈ 7.7)
 export function rating(s) {
-  if (s >= 9) return 'Exceptional';
-  if (s >= 8) return 'Excellent';
-  if (s >= 7) return 'Good';
-  if (s >= 6) return 'Above Average';
-  if (s >= 5) return 'Average';
-  if (s >= 4) return 'Below Average';
+  if (s >= 7.6) return 'Exceptional';
+  if (s >= 6.9) return 'Excellent';
+  if (s >= 6.3) return 'Good';
+  if (s >= 5.8) return 'Above Average';
+  if (s >= 5.1) return 'Average';
+  if (s >= 4.4) return 'Below Average';
   return 'Needs Work';
 }
 export function scoreColor(s) {
-  if (s >= 7.5) return 'var(--good)';
-  if (s >= 6) return 'var(--ok)';
-  if (s >= 4.5) return 'var(--warn)';
+  if (s >= 6.9) return 'var(--good)';
+  if (s >= 5.8) return 'var(--ok)';
+  if (s >= 4.6) return 'var(--warn)';
   return 'var(--bad)';
 }
 
 // ───────────────────────── assessments & pillars ─────────────────────────
-const A = (id, name, metrics, desc) => ({ id, name, metrics, desc });
+// w = the assessment's share of its pillar. Shares follow two lines of evidence: eye-tracking studies, where
+// the central triangle (eyes, nose, mouth) draws most attention during attractiveness judgments, and
+// conjoint studies of male faces, where jaw and brow prominence outweigh cheekbones and eye size.
+// Larger regions (lower face, midface) also outweigh small peripheral ones (ears, hairline).
+const A = (id, name, metrics, desc, w) => ({ id, name, metrics, desc, w });
 export const PILLARS = [
   { id: 'harmony', name: 'Harmony', blurb: 'How well your proportions fit together — 70 front and side ratios compared with ideal male ranges.' },
   { id: 'angularity', name: 'Angularity', blurb: 'How sharp and defined your bone structure reads: cheekbones, jaw, chin and the area under the jaw.',
     items: [
-      A('cheekbones', 'Cheekbone Prominence', [['cheekbone_height', 2], ['bitemporal', 1], ['orbital_vector', 1]], 'High, forward cheekbones that are wider than the temples.'),
-      A('jaw_def', 'Jaw Definition', [['gonial', 2], ['bigonial', 2], ['jfa', 1], ['jaw_slope', 1], ['mpa', 1]], 'A wide jaw with a crisp angle and a flat lower border.'),
-      A('cheek_lean', 'Cheek Leanness', [['cheek_lean', 2], ['bigonial', 1]], 'How much the face narrows below the cheekbones — estimated from the facial contour.'),
-      A('chin_def', 'Chin Definition', [['chin_philtrum', 2], ['fh_recession', 2], ['mentolabial', 1], ['z_angle', 1]], 'A tall, forward chin with a clear fold under the lip.'),
-      A('submental', 'Submental Definition', [['submental', 2], ['mpa', 1], ['gonion_mouth', 1]], 'A sharp angle under the chin and a defined neck–jaw transition.'),
+      A('cheekbones', 'Cheekbone Prominence', [['cheekbone_height', 2], ['bitemporal', 1], ['orbital_vector', 1]], 'High, forward cheekbones that are wider than the temples.', 0.18),
+      A('jaw_def', 'Jaw Definition', [['gonial', 2], ['bigonial', 2], ['jfa', 1], ['jaw_slope', 1], ['mpa', 1]], 'A wide jaw with a crisp angle and a flat lower border.', 0.32),
+      A('cheek_lean', 'Cheek Leanness', [['cheek_lean', 2], ['bigonial', 1]], 'How much the face narrows below the cheekbones — estimated from the facial contour.', 0.12),
+      A('chin_def', 'Chin Definition', [['chin_philtrum', 2], ['fh_recession', 2], ['mentolabial', 1], ['z_angle', 1]], 'A tall, forward chin with a clear fold under the lip.', 0.22),
+      A('submental', 'Submental Definition', [['submental', 2], ['mpa', 1], ['gonion_mouth', 1]], 'A sharp angle under the chin and a defined neck–jaw transition.', 0.16),
     ] },
   { id: 'dimorphism', name: 'Dimorphism', blurb: 'How strongly your features show male‑typical traits.',
     items: [
-      A('d_jaw', 'Jaw', [['bigonial', 2], ['gonial', 1], ['ramus_mandible', 1]], 'Wide jaw, tall ramus, sharp angle.'),
-      A('d_brow', 'Brow Ridge', [['brow_low_set', 2], ['browridge_incl', 1], ['nasofrontal', 1]], 'Low brows and a projecting brow ridge.'),
-      A('d_shape', 'Face Shape', [['fwhr', 2], ['total_wh', 1]], 'Wide, compact face proportions.'),
-      A('d_eyes', 'Eyes', [['canthal_tilt', 1], ['eye_ar', 2]], 'Narrow, horizontally long eyes with positive tilt.'),
-      A('d_nose', 'Nose', [['icd_nose', 1], ['nasal_projection', 1], ['nasal_wh', 1]], 'A proportionate, well‑projected nose.'),
-      A('d_hair', 'Hairline', [['top_third', 2], ['upper_forehead', 1]], 'Forehead height and slope.'),
-      A('d_lips', 'Lips', [['lip_ratio', 1], ['e_lower', 1], ['e_upper', 1]], 'Moderate lip fullness and projection.'),
-      A('d_chin', 'Chin', [['chin_philtrum', 2], ['fh_recession', 1]], 'A tall, projecting chin.'),
-      A('d_cheek', 'Cheekbones', [['cheekbone_height', 1], ['bitemporal', 1]], 'High cheekbones.'),
-      A('d_neck', 'Neck', [['neck_width', 2], ['submental', 1]], 'A thick neck and sharp neck–chin angle.'),
+      A('d_jaw', 'Jaw', [['bigonial', 2], ['gonial', 1], ['ramus_mandible', 1]], 'Wide jaw, tall ramus, sharp angle.', 0.2),
+      A('d_brow', 'Brow Ridge', [['brow_low_set', 2], ['browridge_incl', 1], ['nasofrontal', 1]], 'Low brows and a projecting brow ridge.', 0.18),
+      A('d_shape', 'Face Shape', [['fwhr', 2], ['total_wh', 1]], 'Wide, compact face proportions.', 0.14),
+      A('d_eyes', 'Eyes', [['canthal_tilt', 1], ['eye_ar', 2]], 'Narrow, horizontally long eyes with positive tilt.', 0.08),
+      A('d_nose', 'Nose', [['icd_nose', 1], ['nasal_projection', 1], ['nasal_wh', 1]], 'A proportionate, well‑projected nose.', 0.07),
+      A('d_hair', 'Hairline', [['top_third', 2], ['upper_forehead', 1]], 'Forehead height and slope.', 0.04),
+      A('d_lips', 'Lips', [['lip_ratio', 1], ['e_lower', 1], ['e_upper', 1]], 'Moderate lip fullness and projection.', 0.04),
+      A('d_chin', 'Chin', [['chin_philtrum', 2], ['fh_recession', 1]], 'A tall, projecting chin.', 0.12),
+      A('d_cheek', 'Cheekbones', [['cheekbone_height', 1], ['bitemporal', 1]], 'High cheekbones.', 0.07),
+      A('d_neck', 'Neck', [['neck_width', 2], ['submental', 1]], 'A thick neck and sharp neck–chin angle.', 0.06),
     ] },
   { id: 'features', name: 'Features', blurb: 'Feature‑by‑feature assessment of eyes, brows, nose, lips, jaw, chin, cheeks, forehead, ears and symmetry. (Skin is not assessed — it can’t be measured from landmarks.)',
     items: [
-      A('f_eyes', 'Eyes', [['canthal_tilt', 2], ['eye_ar', 2], ['one_eye_apart', 1], ['esr', 1], ['orbital_vector', 1]], 'Shape, tilt and spacing of the eyes.'),
-      A('f_brows', 'Eyebrows', [['brow_low_set', 2], ['brow_tilt', 1], ['brow_length', 1]], 'Position, tilt and length of the brows.'),
-      A('f_nose', 'Nose', [['icd_nose', 1], ['bridge_nose', 1], ['nose_tip_pos', 1], ['nasofrontal', 1], ['nasolabial', 1], ['nasal_projection', 1], ['nasal_tip_angle', 1], ['tip_rotation', 1], ['nasofacial', 1], ['nasomental', 1]], 'Width, bridge, projection and angles of the nose.'),
-      A('f_lips', 'Lips', [['lip_ratio', 1], ['cupid_depth', 1], ['mouth_corner', 1], ['mouth_nose', 1], ['ipd_mouth', 1], ['e_upper', 1], ['e_lower', 1], ['s_upper', 1], ['s_lower', 1]], 'Lip proportions and position against profile lines.'),
-      A('f_jaw', 'Jaw', [['gonial', 2], ['bigonial', 2], ['jfa', 1], ['jaw_slope', 1], ['mpa', 1], ['ramus_mandible', 1], ['gonion_mouth', 1]], 'Jaw width, angle and slope.'),
-      A('f_chin', 'Chin', [['chin_philtrum', 2], ['fh_recession', 2], ['mentolabial', 1], ['holdaway', 1], ['z_angle', 1]], 'Chin height and projection.'),
-      A('f_cheeks', 'Cheeks', [['cheekbone_height', 2], ['cheek_lean', 1]], 'Cheekbone height and lower‑cheek leanness.'),
-      A('f_forehead', 'Forehead', [['top_third', 2], ['bitemporal', 1], ['browridge_incl', 1], ['upper_forehead', 1]], 'Forehead height, width and slope.'),
-      A('f_ears_neck', 'Ears & Neck', [['ear_angle', 1], ['ear_ratio', 1], ['neck_width', 1], ['submental', 1]], 'Ear protrusion and neck build.'),
-      A('f_sym', 'Symmetry', [['symmetry', 2], ['nose_tip_pos', 1], ['iaa_jfa_dev', 1]], 'Left–right balance and midline alignment.'),
+      A('f_eyes', 'Eyes', [['canthal_tilt', 2], ['eye_ar', 2], ['one_eye_apart', 1], ['esr', 1], ['orbital_vector', 1]], 'Shape, tilt and spacing of the eyes.', 0.2),
+      A('f_brows', 'Eyebrows', [['brow_low_set', 2], ['brow_tilt', 1], ['brow_length', 1]], 'Position, tilt and length of the brows.', 0.1),
+      A('f_nose', 'Nose', [['icd_nose', 1], ['bridge_nose', 1], ['nose_tip_pos', 1], ['nasofrontal', 1], ['nasolabial', 1], ['nasal_projection', 1], ['nasal_tip_angle', 1], ['tip_rotation', 1], ['nasofacial', 1], ['nasomental', 1]], 'Width, bridge, projection and angles of the nose.', 0.15),
+      A('f_lips', 'Lips', [['lip_ratio', 1], ['cupid_depth', 1], ['mouth_corner', 1], ['mouth_nose', 1], ['ipd_mouth', 1], ['e_upper', 1], ['e_lower', 1], ['s_upper', 1], ['s_lower', 1]], 'Lip proportions and position against profile lines.', 0.13),
+      A('f_jaw', 'Jaw', [['gonial', 2], ['bigonial', 2], ['jfa', 1], ['jaw_slope', 1], ['mpa', 1], ['ramus_mandible', 1], ['gonion_mouth', 1]], 'Jaw width, angle and slope.', 0.14),
+      A('f_chin', 'Chin', [['chin_philtrum', 2], ['fh_recession', 2], ['mentolabial', 1], ['holdaway', 1], ['z_angle', 1]], 'Chin height and projection.', 0.09),
+      A('f_cheeks', 'Cheeks', [['cheekbone_height', 2], ['cheek_lean', 1]], 'Cheekbone height and lower‑cheek leanness.', 0.07),
+      A('f_forehead', 'Forehead', [['top_third', 2], ['bitemporal', 1], ['browridge_incl', 1], ['upper_forehead', 1]], 'Forehead height, width and slope.', 0.04),
+      A('f_ears_neck', 'Ears & Neck', [['ear_angle', 1], ['ear_ratio', 1], ['neck_width', 1], ['submental', 1]], 'Ear protrusion and neck build.', 0.02),
+      A('f_sym', 'Symmetry', [['symmetry', 2], ['nose_tip_pos', 1], ['iaa_jfa_dev', 1]], 'Left–right balance and midline alignment.', 0.06),
     ] },
 ];
 export const PILLAR_WEIGHTS = { harmony: 0.35, angularity: 0.2, dimorphism: 0.25, features: 0.2 };
 
+// ───────────────────────── calibration ─────────────────────────
+// Final scores are put on a population scale matched to FaceIQ's: 7.03 → top 5.0%, 7.77 → top 0.8%,
+// i.e. scores ~ Normal(mean 5.44, SD 0.97). CAL maps each raw composite to that scale with
+// percentile-matched knots [raw, shown], estimated by simulating adult men from NORMS.
+// Regenerate with: node tools/calibrate.mjs
+export const POP = { mean: 5.44, sd: 0.97 };
+const CAL = {
+  harmony: [[2.094, 2.44], [2.623, 3.18], [3.173, 3.84], [3.712, 4.48], [4.524, 5.44], [5.229, 6.40], [5.655, 7.04], [6.069, 7.70], [6.540, 8.44]],
+  angularity: [[0.921, 2.44], [1.362, 3.18], [1.947, 3.84], [2.606, 4.48], [3.816, 5.44], [5.173, 6.40], [6.080, 7.04], [7.015, 7.70], [7.975, 8.44]],
+  dimorphism: [[1.292, 2.44], [1.779, 3.18], [2.355, 3.84], [2.976, 4.48], [4.052, 5.44], [5.157, 6.40], [5.892, 7.04], [6.640, 7.70], [7.461, 8.44]],
+  features: [[1.596, 2.44], [2.134, 3.18], [2.668, 3.84], [3.218, 4.48], [4.151, 5.44], [5.043, 6.40], [5.591, 7.04], [6.140, 7.70], [6.759, 8.44]],
+  overall: [[1.679, 2.44], [2.178, 3.18], [2.710, 3.84], [3.281, 4.48], [4.205, 5.44], [5.091, 6.40], [5.630, 7.04], [6.176, 7.70], [6.724, 8.44]],
+};
+// Piecewise-linear through the knots, extended past the ends with the outer slopes
+function calibrate(raw, knots) {
+  if (!Number.isFinite(raw)) return 0;
+  let i = 0;
+  while (i < knots.length - 2 && raw > knots[i + 1][0]) i++;
+  const [x0, y0] = knots[i], [x1, y1] = knots[i + 1];
+  return clamp(y0 + ((y1 - y0) * (raw - x0)) / ((x1 - x0) || 1), 0, 9.99);
+}
+
+// Weighted mean that leans on weak points: the weakest third (by weight) counts extra,
+// so one clear flaw drags a score down more than one strength lifts it.
+function flawMean(items) {
+  const it = items.filter((x) => Number.isFinite(x.s) && x.w > 0).sort((a, b) => a.s - b.s);
+  const W = it.reduce((a, x) => a + x.w, 0);
+  if (!W) return 0;
+  const mean = it.reduce((a, x) => a + x.s * x.w, 0) / W;
+  let acc = 0, sum = 0;
+  for (const x of it) {
+    const take = Math.min(x.w, W / 3 - acc);
+    if (take <= 0) break;
+    sum += x.s * take; acc += take;
+  }
+  return 0.7 * mean + 0.3 * (sum / acc);
+}
+
+// Pure scoring from raw measurement values ({id: number}) — used by analyze, Simulate and calibration.
+export function scoreValues(raw) {
+  const values = {};
+  for (const m of M) values[m.id] = { v: raw[m.id], s: scoreValue(m, raw[m.id]) };
+  const item = (id, w) => ({ s: values[id].s, w: Number.isFinite(values[id].v) ? w : 0 });
+  const pillars = {}, rawP = {};
+  const hmList = M.filter((m) => m.hm);
+  rawP.harmony = flawMean(hmList.map((m) => item(m.id, m.w)));
+  pillars.harmony = { score: calibrate(rawP.harmony, CAL.harmony), raw: rawP.harmony, items: hmList.map((m) => m.id) };
+  for (const p of PILLARS.slice(1)) {
+    const items = p.items.map((a) => ({ ...a, score: flawMean(a.metrics.map(([id, w]) => item(id, w * METRIC_BY_ID[id].w))) }));
+    rawP[p.id] = flawMean(items.map((a) => ({ s: a.score, w: a.w })));
+    pillars[p.id] = { score: calibrate(rawP[p.id], CAL[p.id]), raw: rawP[p.id], items };
+  }
+  const rawOverall = Object.entries(PILLAR_WEIGHTS).reduce((s, [k, w]) => s + rawP[k] * w, 0);
+  const overall = calibrate(rawOverall, CAL.overall);
+  return { values, pillars, overall, rawOverall, percentile: percentile(overall) };
+}
+
 // ───────────────────────── run analysis ─────────────────────────
-export function analyze(front, side, meta = {}) {
+export function measure(front, side) {
   const ff = frontFrame(front), sf = sideFrame(side);
   const fc = frontCtx(ff.N), sc = sideCtx(sf.N);
-  const values = {};
+  const raw = {};
   for (const m of M) {
     const N = m.view === 'front' ? ff.N : sf.N;
     const c = m.view === 'front' ? fc : sc;
     let v;
     try { v = m.f(N, c); } catch { v = NaN; }
-    values[m.id] = { v, s: scoreValue(m, v) };
+    raw[m.id] = v;
   }
-  const wavg = (pairs) => {
-    let s = 0, w = 0;
-    for (const [id, wt] of pairs) { const r = values[id]; if (r && Number.isFinite(r.v)) { s += r.s * wt; w += wt; } }
-    return w ? s / w : 0;
-  };
-  const pillars = {};
-  const hmList = M.filter((m) => m.hm);
-  pillars.harmony = { score: wavg(hmList.map((m) => [m.id, m.w])), items: hmList.map((m) => m.id) };
-  for (const p of PILLARS.slice(1)) {
-    const items = p.items.map((a) => ({ ...a, score: wavg(a.metrics) }));
-    pillars[p.id] = { score: items.reduce((s, a) => s + a.score, 0) / items.length, items };
-  }
-  const overall = Object.entries(PILLAR_WEIGHTS).reduce((s, [k, w]) => s + pillars[k].score * w, 0);
-  return { values, pillars, overall, percentile: percentile(overall), quality: quality(front, side, ff, fc, sf, sc, meta), frames: { front: ff, side: sf } };
+  return { raw, ff, fc, sf, sc };
 }
 
-// Normal CDF → share of people scoring below
-function percentile(s) {
-  const z = (s - 5.4) / 1.25;
+export function analyze(front, side, meta = {}) {
+  const { raw, ff, fc, sf, sc } = measure(front, side);
+  return { ...scoreValues(raw), quality: quality(front, side, ff, fc, sf, sc, meta), frames: { front: ff, side: sf } };
+}
+
+// Normal CDF → share of men scoring below
+export function percentile(s) {
+  const z = (s - POP.mean) / POP.sd;
   const t = 1 / (1 + 0.2316419 * Math.abs(z));
   const d = 0.3989423 * Math.exp((-z * z) / 2);
   let p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));

@@ -6,7 +6,7 @@ import { PILLARS, METRICS, METRIC_BY_ID, rating, scoreColor, fmt, fmtRange, barG
 import { faceThumb } from './dashboard.js';
 
 const UNDERSTAND = {
-  harmony: `Harmony compares your proportions with ideal male ranges — ${METRICS.filter((m) => m.hm && m.view === 'front').length} front ratios (thirds, widths, eye spacing, tilts) and ${METRICS.filter((m) => m.hm && m.view === 'side').length} side ratios (profile angles, nose and lip lines). Each ratio is scored 0–10: inside the ideal range scores 8.8–10, and the score falls away the further you are outside it. The pillar score is the weighted average; key ratios like FWHR, facial thirds and canthal tilt count more.`,
+  harmony: `Harmony compares your proportions with ideal male ranges — ${METRICS.filter((m) => m.hm && m.view === 'front').length} front ratios (thirds, widths, eye spacing, tilts) and ${METRICS.filter((m) => m.hm && m.view === 'side').length} side ratios (profile angles, nose and lip lines). Each ratio is scored 0–10 by how far it sits from the male ideal, measured against how much men normally vary — a typical man lands mid‑scale, only rare values reach 9–10. Key ratios (FWHR, thirds, eye spacing and tilt, jaw width, chin projection) count up to 5× more than minor ones, weak points count extra, and the pillar is placed on the population scale (5.4 = average).`,
   angularity: 'Angularity estimates how sharp and defined your bone structure looks, using the landmark geometry behind cheekbone prominence, jaw definition, cheek leanness, chin definition and the area under the jaw. Each assessment combines several measurements.',
   dimorphism: 'Dimorphism measures how strongly your face shows male‑typical traits: a wide jaw, low brows and brow ridge, wide face shape, narrow eyes, a strong chin and neck. Each of the 10 assessments combines the related measurements.',
   features: 'Features rates each facial feature on its own — eyes, brows, nose, lips, jaw, chin, cheeks, forehead, ears & neck, and symmetry — from all the measurements that describe it. Skin isn’t rated because it can’t be measured from landmarks.',
@@ -75,6 +75,7 @@ export function mountAnalysis(page, app, scan, res, pid) {
       const st = new Stage(host, img, {
         bg: '#0c1012',
         onDraw: (ctx, s) => {
+          drawFocusBlur(ctx, s);
           const g = ctx.createLinearGradient(0, 0, 0, s.h);
           g.addColorStop(0, 'rgba(6,10,12,0.30)'); g.addColorStop(0.6, 'rgba(6,10,12,0.38)'); g.addColorStop(1, 'rgba(6,10,12,0.85)');
           ctx.fillStyle = g; ctx.fillRect(0, 0, s.w, s.h);
@@ -86,9 +87,13 @@ export function mountAnalysis(page, app, scan, res, pid) {
           }
         },
       });
+      st.blur = makeBlur(img);
+      st.focus = { from: 0, to: 0, t0: 0, box: null };
+      st.lmBox = bbox(lm);
       const fit = () => {
         const b = bbox(lm, view === 'front' ? 0.12 : 0.16);
-        st.setView(st.rectView(Math.max(0, b.x0), Math.max(0, b.y0 - b.h * 0.04), Math.min(st.iw, b.x1), Math.min(st.ih, b.y1 + b.h * 0.12), 0));
+        st.fitV = st.rectView(Math.max(0, b.x0), Math.max(0, b.y0 - b.h * 0.04), Math.min(st.iw, b.x1), Math.min(st.ih, b.y1 + b.h * 0.12), 0);
+        st.setView(st.focus.to && st.focus.target ? st.focus.target : st.fitV);
       };
       st.onResize = fit;
       fit();
@@ -123,15 +128,48 @@ export function mountAnalysis(page, app, scan, res, pid) {
     $('#pfScore', v).style.color = scoreColor(sc);
     $('#pfRate', v).textContent = rating(sc);
     showView(m.view);
+    focusOn(m);
+  }
+
+  // Zoom smoothly into the measured feature and blur the rest of the photo
+  function focusOn(m) {
+    const st = stages[m.view];
     t0 = performance.now();
     cancelAnimationFrame(raf);
+    if (st) {
+      const { prims, inv } = overlayFor(m, res);
+      const pts = [];
+      for (const p of prims) for (const k of ['a', 'b', 'v', 'p']) if (p[k]) pts.push(inv(p[k]));
+      if (pts.length) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const p of pts) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+        // never zoom tighter than ~a third of the face, and leave room around the lines
+        const minS = Math.max(st.lmBox.w, st.lmBox.h) * 0.28;
+        const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        const hw = Math.max(x1 - x0, minS) * 0.66, hh = Math.max(y1 - y0, minS) * 0.66;
+        const box = { x0: cx - hw, y0: cy - hh, x1: cx + hw, y1: cy + hh };
+        let target = st.rectView(box.x0, box.y0, box.x1, box.y1, 0);
+        target.s = Math.max(st.fitV.s, Math.min(target.s, st.fitV.s * 3.2));
+        st.focus = { from: focusAmt(st.focus), to: 1, t0, box: { x0: cx - hw / 1.45, y0: cy - hh / 1.45, x1: cx + hw / 1.45, y1: cy + hh / 1.45 }, target };
+        st.animateTo(target, 650);
+      }
+    }
     const loop = () => {
-      const st = stages[m.view];
-      if (!st || !alive) return;
-      st.draw();
-      if (performance.now() - t0 < 720) raf = requestAnimationFrame(loop);
+      const s2 = stages[m.view];
+      if (!s2 || !alive) return;
+      s2.draw();
+      if (performance.now() - t0 < 760) raf = requestAnimationFrame(loop);
     };
     loop();
+  }
+  // Back to the whole face when the pointer leaves the list
+  function unfocus() {
+    const now = performance.now();
+    for (const st of Object.values(stages)) {
+      if (!st.focus || !st.focus.to) continue;
+      st.focus = { ...st.focus, from: focusAmt(st.focus), to: 0, t0: now, target: null };
+      st.animateTo(st.fitV, 650);
+    }
   }
 
   // ── list ──
@@ -162,13 +200,12 @@ export function mountAnalysis(page, app, scan, res, pid) {
         active = { key: 'sub' + m.id, m };
         showView(m.view);
         $('#pfMetric', v).textContent = m.name;
-        t0 = performance.now();
-        const loop = () => { const st = stages[m.view]; if (!st || !alive) return; st.draw(); if (performance.now() - t0 < 720) raf = requestAnimationFrame(loop); };
-        cancelAnimationFrame(raf); loop();
+        focusOn(m);
       }));
     });
   }
   renderList();
+  $('#mList', v).addEventListener('mouseleave', () => { unfocus(); active = active && { ...active, key: null }; });
 
   // ── controls ──
   $('#sort', v).value = sort;
@@ -204,6 +241,59 @@ export function mountAnalysis(page, app, scan, res, pid) {
   };
 }
 
+// ── focus blur ──
+const FOCUS_MS = 520;
+function focusAmt(f) {
+  if (!f) return 0;
+  const t = Math.min(1, Math.max(0, (performance.now() - f.t0) / FOCUS_MS));
+  const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  return f.from + (f.to - f.from) * e;
+}
+// A pre-blurred, downscaled copy of the photo (blurring every frame would be too slow)
+function makeBlur(img) {
+  const W = img.naturalWidth, H = img.naturalHeight;
+  const k = Math.min(1, 900 / Math.max(W, H));
+  const c = document.createElement('canvas');
+  c.width = Math.round(W * k); c.height = Math.round(H * k);
+  const x = c.getContext('2d');
+  x.filter = 'blur(4px)';
+  x.drawImage(img, 0, 0, c.width, c.height);
+  return { canvas: c, k };
+}
+// Lay the blurred copy over the photo everywhere except a soft spotlight on the focused feature
+function drawFocusBlur(ctx, s) {
+  const f = s.focus, amt = focusAmt(f);
+  if (!(amt > 0.002) || !f.box || !s.blur) return;
+  const off = s._off || (s._off = document.createElement('canvas'));
+  if (off.width !== s.canvas.width || off.height !== s.canvas.height) { off.width = s.canvas.width; off.height = s.canvas.height; }
+  const o = off.getContext('2d');
+  const v = s.view, dpr = s.dpr, k = s.blur.k;
+  o.setTransform(1, 0, 0, 1, 0, 0);
+  o.globalCompositeOperation = 'source-over';
+  o.clearRect(0, 0, off.width, off.height);
+  o.setTransform((dpr * v.s) / k, 0, 0, (dpr * v.s) / k, dpr * (s.w / 2 - v.cx * v.s), dpr * (s.h / 2 - v.cy * v.s));
+  o.drawImage(s.blur.canvas, 0, 0);
+  o.setTransform(dpr, 0, 0, dpr, 0, 0);
+  o.fillStyle = 'rgba(6,10,12,0.14)';
+  o.fillRect(0, 0, s.w, s.h);
+  o.globalCompositeOperation = 'destination-out';
+  const c = s.toScreen({ x: (f.box.x0 + f.box.x1) / 2, y: (f.box.y0 + f.box.y1) / 2 });
+  const rx = Math.max(20, ((f.box.x1 - f.box.x0) / 2) * v.s), ry = Math.max(20, ((f.box.y1 - f.box.y0) / 2) * v.s);
+  o.save();
+  o.translate(c.x, c.y);
+  o.scale(rx, ry);
+  const g = o.createRadialGradient(0, 0, 0, 0, 0, 1);
+  g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(0.62, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  o.fillStyle = g;
+  o.beginPath(); o.arc(0, 0, 1, 0, Math.PI * 2); o.fill();
+  o.restore();
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = amt;
+  ctx.drawImage(off, 0, 0);
+  ctx.restore();
+}
+
 // ── row templates ──
 function gbar(m, val) {
   const g = barGeom(m);
@@ -225,7 +315,7 @@ export function metricRow(m, res, i) {
     </div>
     <div class="mrow-detail">
       <p>${esc(m.desc)}</p>
-      <div class="kv3"><div><span>Your value</span><b>${fmt(m, r.v)}</b></div><div><span>Ideal (male)</span><b>${fmtRange(m)}</b></div><div><span>Score</span><b style="color:${scoreColor(r.s)}">${r.s.toFixed(2)} · ${rating(r.s)}</b></div></div>
+      <div class="kv3"><div><span>Your value</span><b>${fmt(m, r.v)}</b></div><div><span>Ideal (male)</span><b>${fmtRange(m)}</b><span>typical man ${fmt(m, m.mean)}</span></div><div><span>Score</span><b style="color:${scoreColor(r.s)}">${r.s.toFixed(2)} · ${rating(r.s)}</b></div></div>
       <div class="formula">${icon('info', 13)} ${esc(m.how)}</div>
     </div>
   </div>`;
@@ -237,7 +327,7 @@ function assessRow(a, res, i) {
   return `<div class="mrow" data-id="${a.id}" data-kind="a" style="animation-delay:${Math.min(i, 14) * 25}ms">
     <div class="mrow-main">
       <div class="mr-left">
-        <div class="mr-name">${esc(a.name)} ${vchip(fmt(lead.m, lead.v), lead.s)}</div>
+        <div class="mr-name">${esc(a.name)} ${vchip(fmt(lead.m, lead.v), lead.s)}<span class="chip tiny ghost" title="Share of the pillar score">${Math.round(a.w * 100)}%</span></div>
         <div class="sbar"><i style="width:${a.score * 10}%;background:${scoreColor(a.score)}"></i></div>
       </div>
       <div class="mr-score" style="color:${scoreColor(a.score)}">${a.score.toFixed(2)}</div>
@@ -254,11 +344,12 @@ function assessRow(a, res, i) {
 }
 
 export function scoringGuide() {
-  const bands = [[9, 'Exceptional'], [8, 'Excellent'], [7, 'Good'], [6, 'Above Average'], [5, 'Average'], [4, 'Below Average'], [0, 'Needs Work']];
+  const bands = [[7.6, 'Exceptional'], [6.9, 'Excellent'], [6.3, 'Good'], [5.8, 'Above Average'], [5.1, 'Average'], [4.4, 'Below Average'], [0, 'Needs Work']];
   const m = modal(`<h3 class="m-title">Scoring guide</h3>
-    <p class="m-body">Each measurement is compared with an ideal male range. Inside the range it scores 8.8–10 (10 at the centre). Outside, the score falls smoothly with distance (the falloff width is set per measurement), so being a little off costs a little and being far off costs a lot.</p>
-    <div class="bands">${bands.map(([s, l]) => `<div><span class="sw" style="background:${scoreColor(s + 0.5)}"></span><b>${s === 0 ? '< 4' : s + '+'}</b><span>${l}</span></div>`).join('')}</div>
-    <p class="m-body">Pillars average their measurements (Harmony) or assessments (Angularity, Dimorphism, Features). Overall = 35% Harmony + 20% Angularity + 25% Dimorphism + 20% Features.</p>
+    <p class="m-body">Each measurement is compared with the male ideal, in units of how much men normally vary on it. Close to the ideal scores 8.5–10; a typical value scores around 5–6; far off scores near 0. The shaded “ideal” band is where a measurement scores 8.5 or more.</p>
+    <p class="m-body">Pillars combine measurements by importance and count the weakest third extra, then are placed on a population scale matched to FaceIQ’s: <b>5.4 is average, 7.0 ≈ top 5%, 7.8 ≈ top 1%</b>.</p>
+    <div class="bands">${bands.map(([s, l]) => `<div><span class="sw" style="background:${scoreColor(s + 0.05)}"></span><b>${s === 0 ? '< 4.4' : s + '+'}</b><span>${l}</span></div>`).join('')}</div>
+    <p class="m-body">Overall = 35% Harmony + 20% Angularity + 25% Dimorphism + 20% Features, then placed on the same population scale.</p>
     <button class="btn dark block" data-x>Close</button>`, { cls: 'small' });
   m.el.querySelector('[data-x]').onclick = () => m.close();
 }

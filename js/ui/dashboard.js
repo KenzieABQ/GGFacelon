@@ -2,9 +2,10 @@
 import { $, $$, el, esc, icon, bars, countUp, relTime, confirmDialog, toast } from './dom.js';
 import { Stage } from './stage.js';
 import { drawLinks, drawPoints, bbox } from './draw.js';
-import { PILLARS, METRIC_BY_ID, rating, scoreColor, fmt } from '../metrics.js';
+import { PILLARS, METRIC_BY_ID, rating, scoreColor, fmt, POP } from '../metrics.js';
 import { mountAnalysis } from './analysis.js';
 import { mountPlan, mountSimulate, mountCompare, mountMethodology, exportCard } from './extras.js';
+import { openCalibration } from './calibration.js';
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
@@ -41,13 +42,14 @@ export function mountDashboard(root, app, { scanId, tab, sub }) {
         <div class="cap">Explore</div>
         <a class="side-link" href="#/methodology">${icon('book', 17)} Methodology</a>
         <button class="side-link" id="guide">${icon('camera', 17)} Photo guide</button>
+        <button class="side-link" id="calib">${icon('sliders', 17)} Calibration &amp; data</button>
         <button class="side-link" id="wipe">${icon('trash', 17)} Delete all data</button>
       </div>
     </aside>
     <div class="side-scrim"></div>
     <main class="main">
       <header class="topnav">
-        <button class="icon-btn ghost only-m" id="menu">${icon('sidebar', 19)}</button>
+        <button class="icon-btn ghost only-m" id="menu" title="Show sidebar">${icon('sidebar', 19)}</button>
         <nav class="tabs">${TABS.map((t) => `<a class="tab ${t.id === tab ? 'on' : ''} ${!scan ? 'disabled' : ''}" href="${scan ? `#/scan/${scan.id}/${t.id}` : '#/'}">${t.label}</a>`).join('')}</nav>
         <div class="top-acts">${scan ? `
           <button class="icon-btn" id="share" title="Export report image">${icon('share', 17)}</button>
@@ -65,11 +67,18 @@ export function mountDashboard(root, app, { scanId, tab, sub }) {
     v.classList.toggle('collapsed', c);
     app.prefs.set('sideCollapsed', c);
   };
-  $('#menu', v).onclick = () => v.classList.add('side-open');
+  // Topbar sidebar button: reopens a collapsed sidebar on desktop, opens the drawer on mobile
+  $('#menu', v).onclick = () => {
+    if (v.classList.contains('collapsed') && matchMedia('(min-width: 961px)').matches) {
+      v.classList.remove('collapsed');
+      app.prefs.set('sideCollapsed', false);
+    } else v.classList.add('side-open');
+  };
   $('.side-scrim', v).onclick = () => v.classList.remove('side-open');
   $('#newScan', v).onclick = $('#hNew', v).onclick = () => app.go('#/new');
   $('#hCmp', v).onclick = () => (app.scans.length ? app.go(`#/scan/${(scan || app.scans[0]).id}/compare`) : toast('Make a scan first'));
   $('#guide', v).onclick = () => photoGuide();
+  $('#calib', v).onclick = () => openCalibration(app);
   $('#wipe', v).onclick = async () => {
     if (!app.scans.length) return toast('Nothing to delete');
     if (!(await confirmDialog('Delete all data?', `This permanently removes all ${app.scans.length} scans and photos from this browser. It can’t be undone.`, 'Delete everything', true))) return;
@@ -89,7 +98,7 @@ export function mountDashboard(root, app, { scanId, tab, sub }) {
         <canvas class="hthumb" width="104" height="104" data-id="${s.id}"></canvas>
         <div class="hmid"><div class="hscore" style="color:${scoreColor(r.overall)}">${r.overall.toFixed(2)}</div>
           <div class="hmini">${['H', 'A', 'D', 'F'].map((l, i) => `<span>${l} <b style="color:${scoreColor(ps[i])}">${ps[i].toFixed(1)}</b></span>`).join('')}</div></div>
-        <div class="hdate">${relTime(s.created)}</div>
+        <div class="hdate">${s.label ? `<span class="hlabel">${esc(s.label)}</span>` : ''}${relTime(s.created)}</div>
       </a>`;
     }).join('');
     for (const c of $$('canvas.hthumb', h)) {
@@ -237,7 +246,7 @@ function mountOverview(page, app, scan, res) {
 // Bell curve with the user's position
 export function bellCurve(score, pct) {
   const W = 520, H = 220, pad = 24;
-  const mu = 5.4, sd = 1.25;
+  const mu = POP.mean, sd = POP.sd;
   const X = (s) => pad + (s / 10) * (W - pad * 2);
   const Y = (s) => H - 30 - Math.exp(-0.5 * ((s - mu) / sd) ** 2) * (H - 60);
   let d = '';

@@ -4,7 +4,10 @@
     {
       "name": "ggfacelon",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "5180", "--bind", "127.0.0.1"],
+      "runtimeArgs": [
+        "serve.py",
+        "5180"
+      ],
       "port": 5180
     }
   ]

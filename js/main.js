@@ -1,6 +1,6 @@
 // GGFacelon — app state and routing.
 import { listScans, saveScan, deleteScan, prefs } from './store.js';
-import { analyze } from './metrics.js';
+import { analyze, percentile } from './metrics.js';
 import { loadImage } from './img.js';
 import { mountFlow } from './ui/flow.js';
 import { mountDashboard } from './ui/dashboard.js';
@@ -18,13 +18,29 @@ export const app = {
     if (!this.imgCache.has(url)) this.imgCache.set(url, loadImage(url));
     return this.imgCache.get(url);
   },
-  result(scan) {
+  // Model result for a scan, before any user calibration
+  baseResult(scan) {
     const key = scan.id + ':' + (scan.updated || scan.created);
     if (!this.resCache.has(key)) {
       this.resCache.set(key, analyze(scan.front.lm, scan.side.lm, {
         frontSize: { w: scan.front.w, h: scan.front.h },
         sideSize: { w: scan.side.w, h: scan.side.h },
       }));
+    }
+    return this.resCache.get(key);
+  },
+  // Result shown in the app: the model result, adjusted by the user's known-score calibration if set
+  result(scan) {
+    const base = this.baseResult(scan);
+    const fit = this.prefs.get('anchorFit', null);
+    if (!fit) return base;
+    const key = scan.id + ':' + (scan.updated || scan.created) + ':' + fit.a + ':' + fit.b;
+    if (!this.resCache.has(key)) {
+      const adj = (x) => Math.max(0, Math.min(9.99, fit.a + fit.b * x));
+      const pillars = {};
+      for (const k in base.pillars) pillars[k] = { ...base.pillars[k], score: adj(base.pillars[k].score) };
+      const overall = adj(base.overall);
+      this.resCache.set(key, { ...base, pillars, overall, percentile: percentile(overall) });
     }
     return this.resCache.get(key);
   },

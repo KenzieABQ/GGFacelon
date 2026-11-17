@@ -3,7 +3,7 @@ import { $, $$, el, esc, icon } from './dom.js';
 import { Stage } from './stage.js';
 import { drawPoints, drawCrosshair, drawLinks, bbox } from './draw.js';
 import { DEFS, REF, LINKS, refPoints } from '../landmarks.js';
-import { refitTemplate } from '../detect.js';
+import { refitTemplate, detect } from '../detect.js';
 
 const ZOOMS = [
   { id: 'wide', label: 'Wide', frac: 1.05 },
@@ -34,7 +34,7 @@ export function mountVerify(body, app, draft, view, { onBack, onDone }) {
     </div>
     <aside class="verify-panel">
       <div class="hint-card">${isTemplate ? 'Points start from a template. Place the first couple and the rest will snap into position.' : 'AI placed a first pass. Verify each point before continuing.'}
-        ${isTemplate && view === 'side' ? `<button class="link-btn" id="mirror">${icon('flip', 14)} Face points the other way</button>` : ''}</div>
+        ${view === 'side' ? `<button class="link-btn" id="flip">${icon('flip', 14)} Wrong way? Flip face direction</button>` : ''}</div>
       <div class="vp-card">
         <div class="vp-prog"><span id="pCount"></span><span id="pPct"></span></div>
         <div class="bar"><i id="pBar"></i></div>
@@ -244,14 +244,24 @@ export function mountVerify(body, app, draft, view, { onBack, onDone }) {
   $('#next', v).onclick = next;
   $('#back', v).onclick = prev;
   $('#skipAll', v).onclick = () => { for (const def of defs) d.confirmed[def.id] = true; d.idx = defs.length - 1; onDone(); };
-  const mirrorBtn = $('#mirror', v);
-  if (mirrorBtn) mirrorBtn.onclick = () => {
-    const W = st.iw;
-    const out = {};
-    for (const k in d.lm) out[k] = d.confirmed[k] ? d.lm[k] : { x: W - d.lm[k].x, y: d.lm[k].y };
-    d.lm = out;
-    st.render();
-    focus(true);
+  // Re-run profile detection forced to the opposite facing direction
+  const flipBtn = $('#flip', v);
+  if (flipBtn) flipBtn.onclick = async () => {
+    if (!st) return;
+    const cur = d.dir || Math.sign(d.lm.prn.x - d.lm.tragus.x) || 1;
+    flipBtn.disabled = true;
+    flipBtn.textContent = 'Re‑detecting…';
+    try {
+      const res = await detect('side', st.img, { front: draft.front.lm, skin: draft.front.skin, forceDir: -cur });
+      d.lm = res.lm; d.ai = { ...res.lm }; d.dir = res.dir || -cur; d.source = res.source;
+      d.confirmed = {};
+      idx = 0;
+      computeFace();
+      update(true);
+    } finally {
+      flipBtn.disabled = false;
+      flipBtn.innerHTML = `${icon('flip', 14)} Wrong way? Flip face direction`;
+    }
   };
 
   function reset() {
