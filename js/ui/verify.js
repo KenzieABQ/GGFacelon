@@ -231,8 +231,16 @@ export function mountVerify(body, app, draft, view, { onBack, onDone }) {
     ctx.fillRect(0, 0, W, H);
     ctx.drawImage(refImg, sx, sy, z, (z * H) / W, 0, 0, W, H);
     const px = (r[0] - sx) * s, py = (r[1] - sy) * s;
-    ctx.beginPath(); ctx.arc(px, py, 10, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
-    ctx.beginPath(); ctx.arc(px, py, 7, 0, Math.PI * 2); ctx.fillStyle = '#ff2d43'; ctx.fill();
+    // Hollow ring + crosshair with a tiny centre dot, so the exact spot stays visible under the marker
+    const ring = (stroke, w, r) => { ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.strokeStyle = stroke; ctx.lineWidth = w; ctx.stroke(); };
+    const ticks = (stroke, w) => {
+      ctx.beginPath();
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { ctx.moveTo(px + dx * 14, py + dy * 14); ctx.lineTo(px + dx * 26, py + dy * 26); }
+      ctx.strokeStyle = stroke; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.stroke();
+    };
+    ring('rgba(255,255,255,.95)', 5, 10); ticks('rgba(255,255,255,.95)', 5);
+    ring('#ff2d43', 2.5, 10); ticks('#ff2d43', 2.5);
+    ctx.beginPath(); ctx.arc(px, py, 2.2, 0, Math.PI * 2); ctx.fillStyle = '#ff2d43'; ctx.fill();
     box.innerHTML = '';
     box.appendChild(c);
   }
