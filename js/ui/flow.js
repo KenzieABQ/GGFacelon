@@ -1,7 +1,7 @@
 // New-scan flow: consent → profile → front photo → side photo → AI detection → verify → review → analyse.
 import { $, el, esc, icon, modal, toast } from './dom.js';
 import { normalizeFile, normalizeSource, loadImage } from '../img.js';
-import { detect, loadDetector } from '../detect.js';
+import { detect, loadDetector, loadSegmenter } from '../detect.js';
 import { mountVerify } from './verify.js';
 import { mountReview } from './review.js';
 import { mountAnalyzing } from './analyzing.js';
@@ -268,6 +268,7 @@ export function mountFlow(root, app, opts) {
   } else if (!app.prefs.get('consent')) step(stepConsent);
   else step(stepGender);
   loadDetector().catch(() => {});
+  loadSegmenter().catch(() => {});
 
   return () => { alive = false; if (stepCleanup) stepCleanup(); };
 }

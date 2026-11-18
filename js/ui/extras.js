@@ -1,7 +1,7 @@
 // Plan, Simulate, Compare, Methodology, and the shareable report image.
 import { $, $$, el, esc, icon, toast } from './dom.js';
 import { editableStage } from './review.js';
-import { analyze, METRICS, METRIC_BY_ID, PILLARS, PILLAR_WEIGHTS, rating, scoreColor, fmt, fmtRange } from '../metrics.js';
+import { analyze, METRICS, METRIC_BY_ID, PILLARS, PILLAR_WEIGHTS, rating, scoreColor, ratioColor, fmt, fmtRange } from '../metrics.js';
 import { FRONT, SIDE } from '../landmarks.js';
 import { bbox } from './draw.js';
 import { faceThumb } from './dashboard.js';
@@ -41,7 +41,7 @@ const AREAS = [
   { id: 'proportions', name: 'Facial Proportions', metrics: ['middle_third', 'lower_third', 'lower_third_prop', 'fwhr', 'total_wh', 'midface_ratio', 'iaa', 'iaa_jfa_dev', 'convexity_g', 'convexity_n', 'total_convexity', 'anterior_depth', 'depth_height', 'midface_proj'],
     soft: ['Hair volume on top lengthens the face; a fringe or wider style shortens it and widens the look.', 'Facial hair adds height and width to the lower third.'],
     hard: ['Orthodontic or orthognathic treatment changes lower‑face proportions — specialist consult.'] },
-  { id: 'symmetry', name: 'Symmetry', metrics: ['symmetry', 'nose_tip_pos'],
+  { id: 'symmetry', name: 'Symmetry', metrics: ['symmetry', 'iaa_jfa_dev'],
     soft: ['Retake with your head perfectly straight — small turns exaggerate asymmetry.', 'Chew on both sides and avoid always sleeping on the same side.'],
     hard: ['Mild asymmetry is normal. Large asymmetry is worth a maxillofacial opinion.'] },
 ];
@@ -60,14 +60,14 @@ export function mountPlan(page, app, scan, res) {
       <div class="plan-stat"><b>${focus.length}</b><span>focus areas</span></div>
     </div>
     ${focus.map((a, i) => `<section class="card plan-card fade-up" style="animation-delay:${i * 60}ms">
-      <div class="pl-top"><span class="pl-rank">${i + 1}</span><h3>${a.name}</h3><b class="pl-score" style="color:${scoreColor(a.avg)}">${a.avg.toFixed(2)}</b></div>
-      <div class="pl-weak">${a.weak.slice(0, 5).map((x) => `<span class="chip" title="Ideal ${fmtRange(x.m)}">${esc(x.m.name)} · <b style="color:${scoreColor(x.s)}">${fmt(x.m, x.v)}</b></span>`).join('')}</div>
+      <div class="pl-top"><span class="pl-rank">${i + 1}</span><h3>${a.name}</h3><b class="pl-score" style="color:${ratioColor(a.avg)}">${a.avg.toFixed(2)}</b></div>
+      <div class="pl-weak">${a.weak.slice(0, 5).map((x) => `<span class="chip" title="Ideal ${fmtRange(x.m, x)}">${esc(x.m.name)} · <b style="color:${ratioColor(x.s)}">${fmt(x.m, x.v)}</b></span>`).join('')}</div>
       <div class="pl-cols">
         <div><div class="cap">${icon('sparkle', 13)} Lifestyle & grooming</div><ul>${a.soft.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>
         <div><div class="cap">${icon('info', 13)} Professional options</div><ul class="muted">${a.hard.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>
       </div>
     </section>`).join('')}
-    ${strong.length ? `<section class="card fade-up"><h3>Already strong</h3><div class="pl-weak">${strong.map((a) => `<span class="chip">${a.name} · <b style="color:${scoreColor(a.avg)}">${a.avg.toFixed(2)}</b></span>`).join('')}</div></section>` : ''}
+    ${strong.length ? `<section class="card fade-up"><h3>Already strong</h3><div class="pl-weak">${strong.map((a) => `<span class="chip">${a.name} · <b style="color:${ratioColor(a.avg)}">${a.avg.toFixed(2)}</b></span>`).join('')}</div></section>` : ''}
     <p class="fine center">Not medical advice. Bone structure can’t be changed by exercises; talk to a qualified professional before any procedure.</p>
   </div>`);
   page.appendChild(v);
@@ -172,22 +172,22 @@ export function mountMethodology(page) {
   const lt = (defs) => defs.map((d, i) => `<tr><td class="muted">${i + 1}</td><td><b>${esc(d.name)}</b></td><td class="muted">${esc(d.anat)}</td><td>${esc(d.how)}</td></tr>`).join('');
   const v = el(`<div class="method">
     <section class="card fade-up"><h2>Methodology</h2>
-      <p>GGFacelon measures ${METRICS.length} facial ratios and angles from ${FRONT.length} front and ${SIDE.length} profile landmarks. Landmarks start from two AI models: a 478‑point face mesh (MediaPipe Face Landmarker) for the front, and a person segmenter (MediaPipe selfie‑multiclass: hair, face skin, body skin, clothes, background) that finds the hairline, ears, neck and the profile outline regardless of background colour. The profile tracer works for faces pointing left or right, picks the nose as the sharpest bump on the outline, and uses your front photo's proportions to place the lips, chin and brow. You then verify each point.</p>
+      <p>GGFacelon measures ${METRICS.filter((m) => m.hm).length} Harmony ratios (33 front, 33 side) plus symmetry and jaw taper from ${FRONT.length} front and ${SIDE.length} profile landmarks, following FaceIQ Labs’ published formulas and landmark conventions. Landmarks start from two AI models: a 478‑point face mesh (MediaPipe Face Landmarker) and a person segmenter (hair, face skin, body skin, clothes, background). Front points come from the mesh. Profiles are read from the traced silhouette — nose tip, nose base, both lips, the lip–chin fold and the chin are its peaks and dips — or, for three‑quarter photos, from the mesh’s midline. Sideways or upside‑down photos are turned upright, and tilted ones are levelled. You then verify each point.</p>
       <h3>Why results are consistent</h3>
       <ul class="dots">
-        <li>Every measurement is a ratio or an angle, so photo resolution and how big your face is in the frame don’t change it. Points are stored in the photo’s own pixel space.</li>
-        <li>Front: all points are rotated so the pupils are level, which removes head roll.</li>
-        <li>Profile: points are mirrored to face right and rotated onto the Frankfort horizontal (ear canal → under‑eye rim), so head tilt doesn’t change the angles.</li>
+        <li>Every measurement is a ratio, an angle, or millimetres on a fixed 190 mm hairline‑to‑chin scale (as FaceIQ uses), so photo resolution and how big your face is in the frame don’t change it.</li>
+        <li>Front: points are rotated so the pupils are level. Profile: points are mirrored to face right and levelled to the Frankfort plane (ear canal → under‑eye rim).</li>
         <li>Scores are a fixed function of the landmarks. The same points always give the same result.</li>
-        <li>The pose check warns when the face is small in the frame, low resolution, or turned, since these do distort ratios.</li>
+        <li>The pose check warns when the face is small in the frame, low resolution, or turned.</li>
       </ul>
       <h3>Scoring</h3>
-      <p>Each measurement has a male ideal and a typical spread (how much adult men vary). Its score is the distance from the ideal in units of that spread: within ±0.2 spreads it scores 10, a typical man scores about 5–6, and it falls smoothly towards 0 (score = 10 × (1 + z²/2.17)^−2, z = distance in spreads − 0.2). Harmony weighs the ${METRICS.filter((m) => m.hm).length} ratios by importance (core proportions ×3, minor ones ×0.6) and counts the weakest third extra, so one clear flaw costs more than one strength gains. Angularity, Dimorphism and Features take a weighted average of their assessments: eye‑tracking studies show the central triangle (eyes, nose, mouth) draws most attention during attractiveness judgments, and studies of male faces find jaw and brow prominence outweigh cheekbones and eye size, so those regions carry the largest shares (each assessment shows its share). Overall = ${Object.entries(PILLAR_WEIGHTS).map(([k, w]) => `${Math.round(w * 100)}% ${k[0].toUpperCase() + k.slice(1)}`).join(' + ')}.</p>
-      <p>Pillars and Overall are then placed on a population scale matched to FaceIQ’s published examples (7.03 ≈ top 5%, 7.77 ≈ top 0.8%): mean 5.44, SD 0.97. The mapping comes from simulating 20,000 men from the population norms including landmark‑placement noise (<span class="mono">tools/calibrate.mjs</span>). You can fine‑tune it with known scores under <b>Calibration</b>.</p>
-      <p class="fine">Ranges come from published facial‑aesthetics norms (Ricketts E‑line, Steiner S‑line, Burstone B‑line, Holdaway H‑angle, Merrifield Z‑angle, Goode ratio, Legan convexity) and commonly cited male ideal ranges for the rest. They describe statistical ideals, not a person’s worth. Skin is not assessed.</p>
+      <p>Each ratio scores <b>10 inside its ideal range</b> and falls off outside it as 10·exp(−(d/s)²), where d is the distance outside the range and s is how forgiving that ratio is — both fitted to FaceIQ’s own published scores. FaceIQ adjusts its ranges for ethnicity; GGFacelon doesn’t ask, so it scores your face against each of FaceIQ’s six range sets and uses the best fit.</p>
+      <p>Harmony combines the ratios with a weighted power mean that leans on weaker ratios (front and side separately, then 60% front + 40% side). The weights reproduce FaceIQ’s published flaw impacts — face width‑to‑height, brow position and eye shape count about five times as much as the nose tip angle or mouth corners. Angularity, Dimorphism and Features (FaceIQ rates these with a vision model) are estimated from groups of measurements and calibrated against FaceIQ’s scores on a benchmark of celebrity faces. Overall is the geometric mean of the four pillars, exactly as FaceIQ combines them, so your weakest pillar pulls hardest.</p>
+      <p>The scale is FaceIQ’s: <b>5 is the average man, 7 ≈ top 6%, 8 ≈ top 0.4%</b>. You can fine‑tune it with known scores under <b>Calibration</b>.</p>
+      <p class="fine">Full details: <span class="mono">docs/scoring.md</span>. Ideal ranges describe statistical ideals, not a person’s worth. Skin is not assessed.</p>
     </section>
-    <section class="card fade-up"><h2>Front measurements</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Measurement</th><th>Formula</th><th>Ideal (≥8.5)</th><th>Typical man</th><th>Weight</th></tr></thead><tbody>${mt('front')}</tbody></table></div></section>
-    <section class="card fade-up"><h2>Side measurements</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Measurement</th><th>Formula</th><th>Ideal (≥8.5)</th><th>Typical man</th><th>Weight</th></tr></thead><tbody>${mt('side')}</tbody></table></div></section>
+    <section class="card fade-up"><h2>Front measurements</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Measurement</th><th>Formula</th><th>Ideal (Caucasian set)</th><th>Typical man</th><th>Weight</th></tr></thead><tbody>${mt('front')}</tbody></table></div></section>
+    <section class="card fade-up"><h2>Side measurements</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Measurement</th><th>Formula</th><th>Ideal (Caucasian set)</th><th>Typical man</th><th>Weight</th></tr></thead><tbody>${mt('side')}</tbody></table></div></section>
     <section class="card fade-up"><h2>Landmarks</h2>
       <h3>Front (${FRONT.length})</h3><div class="tbl-wrap"><table class="tbl"><tbody>${lt(FRONT)}</tbody></table></div>
       <h3>Profile (${SIDE.length})</h3><div class="tbl-wrap"><table class="tbl"><tbody>${lt(SIDE)}</tbody></table></div></section>

@@ -2,7 +2,7 @@
 import { $, el, icon } from './dom.js';
 import { Stage } from './stage.js';
 import { drawLinks, drawDot } from './draw.js';
-import { detect } from '../detect.js';
+import { detectUpright } from '../detect.js';
 import { DEFS } from '../landmarks.js';
 
 export function mountDetecting(body, app, draft, done) {
@@ -45,7 +45,16 @@ export function mountDetecting(body, app, draft, done) {
       status.textContent = view === 'front' ? 'Detecting facial landmarks…' : 'Tracing your profile…';
       const img = await app.img(draft[view].url);
       const t0 = performance.now();
-      const res = await detect(view, img, view === 'side' && out.front ? { front: out.front.lm, skin: out.front.skin } : {});
+      const res = await detectUpright(view, img, view === 'side' && out.front ? { front: out.front.lm, skin: out.front.skin } : {});
+      // A sideways or tilted photo comes back turned upright / levelled: keep that version
+      if (res.image) {
+        draft[view] = { ...draft[view], url: res.image.url, w: res.image.w, h: res.image.h };
+        const up = await app.img(res.image.url);
+        stages[view].img = up;
+        stages[view].view = stages[view].fitView(0, true);
+        const what = res.turned ? `turned ${res.turned}°` : `levelled by ${Math.abs(res.levelled).toFixed(1)}°`;
+        note.innerHTML = `${icon('info', 14)} The ${view === 'front' ? 'front' : 'profile'} photo was ${what} so the ${view === 'front' ? 'eyes are level' : 'head sits level (Frankfort plane)'}.`;
+      }
       const wait = Math.max(0, 900 - (performance.now() - t0)); // let the sweep read as a scan
       await sleep(wait);
       out[view] = res;

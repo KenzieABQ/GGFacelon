@@ -2,7 +2,7 @@
 import { $, $$, el, esc, icon, countUp, modal } from './dom.js';
 import { Stage } from './stage.js';
 import { drawOverlay, drawPoints, drawLinks, bbox } from './draw.js';
-import { PILLARS, METRICS, METRIC_BY_ID, rating, scoreColor, fmt, fmtRange, barGeom, overlayFor, assessmentDetail } from '../metrics.js';
+import { PILLARS, METRICS, METRIC_BY_ID, rating, scoreColor, ratioColor, ratioLabel, fmt, fmtRange, barGeom, overlayFor, assessmentDetail } from '../metrics.js';
 import { faceThumb } from './dashboard.js';
 
 const UNDERSTAND = {
@@ -295,12 +295,12 @@ function drawFocusBlur(ctx, s) {
 }
 
 // ── row templates ──
-function gbar(m, val) {
-  const g = barGeom(m);
-  const pos = (g.at(val) * 100).toFixed(1);
+function gbar(m, r) {
+  const g = barGeom(m, r);
+  const pos = (g.at(r.v) * 100).toFixed(1);
   return `<div class="gbar" style="--loW:${g.loW * 100}%;--lo:${g.lo * 100}%;--hi:${g.hi * 100}%;--hiW:${g.hiW * 100}%"><i class="mk" style="left:${pos}%"></i></div>`;
 }
-const vchip = (txt, s) => `<span class="vchip" style="--c:${scoreColor(s)}">${txt}</span>`;
+const vchip = (txt, s) => `<span class="vchip" style="--c:${ratioColor(s)}">${txt}</span>`;
 
 export function metricRow(m, res, i) {
   const r = res.values[m.id];
@@ -308,14 +308,14 @@ export function metricRow(m, res, i) {
     <div class="mrow-main">
       <div class="mr-left">
         <div class="mr-name">${esc(m.name)} ${vchip(fmt(m, r.v), r.s)}${m.extra ? '<span class="chip tiny ghost">extra</span>' : ''}</div>
-        ${gbar(m, r.v)}
+        ${gbar(m, r)}
       </div>
-      <div class="mr-score" style="color:${scoreColor(r.s)}">${r.s.toFixed(2)}</div>
+      <div class="mr-score" style="color:${ratioColor(r.s)}">${r.s.toFixed(2)}</div>
       <span class="chev">${icon('chevR', 16)}</span>
     </div>
     <div class="mrow-detail">
       <p>${esc(m.desc)}</p>
-      <div class="kv3"><div><span>Your value</span><b>${fmt(m, r.v)}</b></div><div><span>Ideal (male)</span><b>${fmtRange(m)}</b><span>typical man ${fmt(m, m.mean)}</span></div><div><span>Score</span><b style="color:${scoreColor(r.s)}">${r.s.toFixed(2)} · ${rating(r.s)}</b></div></div>
+      <div class="kv3"><div><span>Your value</span><b>${fmt(m, r.v)}</b></div><div><span>Ideal (male)</span><b>${fmtRange(m, r)}</b><span>typical man ${fmt(m, m.mean)}</span></div><div><span>Score</span><b style="color:${ratioColor(r.s)}">${r.s.toFixed(2)} · ${ratioLabel(r.s)}</b></div></div>
       <div class="formula">${icon('info', 13)} ${esc(m.how)}</div>
     </div>
   </div>`;
@@ -328,28 +328,28 @@ function assessRow(a, res, i) {
     <div class="mrow-main">
       <div class="mr-left">
         <div class="mr-name">${esc(a.name)} ${vchip(fmt(lead.m, lead.v), lead.s)}<span class="chip tiny ghost" title="Share of the pillar score">${Math.round(a.w * 100)}%</span></div>
-        <div class="sbar"><i style="width:${a.score * 10}%;background:${scoreColor(a.score)}"></i></div>
+        <div class="sbar"><i style="width:${a.score * 10}%;background:${ratioColor(a.score)}"></i></div>
       </div>
-      <div class="mr-score" style="color:${scoreColor(a.score)}">${a.score.toFixed(2)}</div>
+      <div class="mr-score" style="color:${ratioColor(a.score)}">${a.score.toFixed(2)}</div>
       <span class="chev">${icon('chevR', 16)}</span>
     </div>
     <div class="mrow-detail">
       <p>${esc(a.desc)}</p>
       <div class="sub-list">${det.map((d) => `<div class="sub-row" data-m="${d.m.id}">
         <div class="sr-name">${esc(d.m.name)}<span class="sr-view">${d.m.view === 'front' ? 'Front' : 'Side'}${d.w > 1 ? ' · ×' + d.w : ''}</span></div>
-        <div class="sr-val">${fmt(d.m, d.v)}<span>ideal ${fmtRange(d.m)}</span></div>
-        <b style="color:${scoreColor(d.s)}">${d.s.toFixed(2)}</b></div>`).join('')}</div>
+        <div class="sr-val">${fmt(d.m, d.v)}<span>ideal ${fmtRange(d.m, d)}</span></div>
+        <b style="color:${ratioColor(d.s)}">${d.s.toFixed(2)}</b></div>`).join('')}</div>
     </div>
   </div>`;
 }
 
 export function scoringGuide() {
-  const bands = [[7.6, 'Exceptional'], [6.9, 'Excellent'], [6.3, 'Good'], [5.8, 'Above Average'], [5.1, 'Average'], [4.4, 'Below Average'], [0, 'Needs Work']];
+  const bands = [[8, 'Exceptional'], [7, 'Great'], [6, 'Good'], [5, 'Average'], [4, 'Below Average'], [0, 'Poor']];
   const m = modal(`<h3 class="m-title">Scoring guide</h3>
-    <p class="m-body">Each measurement is compared with the male ideal, in units of how much men normally vary on it. Close to the ideal scores 8.5–10; a typical value scores around 5–6; far off scores near 0. The shaded “ideal” band is where a measurement scores 8.5 or more.</p>
-    <p class="m-body">Pillars combine measurements by importance and count the weakest third extra, then are placed on a population scale matched to FaceIQ’s: <b>5.4 is average, 7.0 ≈ top 5%, 7.8 ≈ top 1%</b>.</p>
-    <div class="bands">${bands.map(([s, l]) => `<div><span class="sw" style="background:${scoreColor(s + 0.05)}"></span><b>${s === 0 ? '< 4.4' : s + '+'}</b><span>${l}</span></div>`).join('')}</div>
-    <p class="m-body">Overall = 35% Harmony + 20% Angularity + 25% Dimorphism + 20% Features, then placed on the same population scale.</p>
+    <p class="m-body">Each ratio scores <b>10 inside its ideal range</b> and drops off smoothly outside it — the shaded band on each bar is the ideal range. How fast it drops is set per ratio, fitted to FaceIQ Labs’ published scores.</p>
+    <p class="m-body">Pillars lean on your weaker ratios (a power mean), then sit on FaceIQ’s population scale: <b>5 is average, 7 ≈ top 6%, 8 ≈ top 0.4%</b>.</p>
+    <div class="bands">${bands.map(([s, l]) => `<div><span class="sw" style="background:${scoreColor(s + 0.05)}"></span><b>${s === 0 ? '< 4' : s + '+'}</b><span>${l}</span></div>`).join('')}</div>
+    <p class="m-body">Harmony = 60% front + 40% side. Overall combines the four pillars like a geometric mean, so your weakest pillar pulls hardest.</p>
     <button class="btn dark block" data-x>Close</button>`, { cls: 'small' });
   m.el.querySelector('[data-x]').onclick = () => m.close();
 }

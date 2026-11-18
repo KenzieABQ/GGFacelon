@@ -2,7 +2,7 @@
 import { $, $$, el, esc, icon, bars, countUp, relTime, confirmDialog, toast } from './dom.js';
 import { Stage } from './stage.js';
 import { drawLinks, drawPoints, bbox } from './draw.js';
-import { PILLARS, METRIC_BY_ID, rating, scoreColor, fmt, POP } from '../metrics.js';
+import { PILLARS, METRIC_BY_ID, rating, scoreColor, ratioColor, fmt, POP } from '../metrics.js';
 import { mountAnalysis } from './analysis.js';
 import { mountPlan, mountSimulate, mountCompare, mountMethodology, exportCard } from './extras.js';
 import { openCalibration } from './calibration.js';
@@ -233,7 +233,7 @@ function mountOverview(page, app, scan, res) {
       stages.push(st);
     }
   };
-  const row = (r) => `<div class="mini-row"><span>${esc(r.name)}</span>${r.val ? `<span class="chip tiny">${r.val}</span>` : ''}<b style="color:${scoreColor(r.score)}">${r.score.toFixed(2)}</b></div>`;
+  const row = (r) => `<div class="mini-row"><span>${esc(r.name)}</span>${r.val ? `<span class="chip tiny">${r.val}</span>` : ''}<b style="color:${ratioColor(r.score)}">${r.score.toFixed(2)}</b></div>`;
   $$('#ovTabs button', v).forEach((b) => (b.onclick = () => {
     pid = b.dataset.p;
     $$('#ovTabs button', v).forEach((x) => x.classList.toggle('on', x === b));

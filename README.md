@@ -1,6 +1,6 @@
 # GGFacelon
 
-Landmark‑based facial analysis for men. Upload a front and a side photo; AI places 70 landmarks, you verify each one, and GGFacelon scores 70 measurements across four pillars: **Harmony, Angularity, Dimorphism, Features**. Everything is unlocked and runs in the browser. Photos never leave the device (stored in IndexedDB).
+Landmark‑based facial analysis for men, modelled on FaceIQ Labs' published method. Upload a front and a side photo; AI places 73 landmarks, you verify each one, and GGFacelon scores 66 FaceIQ ratios (plus symmetry and jaw taper) across four pillars: **Harmony, Angularity, Dimorphism, Features**. Everything is unlocked and runs in the browser. Photos never leave the device (stored in IndexedDB).
 
 ## Run
 
@@ -9,24 +9,27 @@ python3 serve.py
 ```
 
 Open http://localhost:5180. (`serve.py` is a plain static server that turns off browser caching, so updates always load.) It has to be served over http (ES modules + camera); opening `index.html` as a file won't work.
-The AI model (MediaPipe Face Landmarker, ~4 MB) loads from a CDN the first time. Offline, points start from a template instead.
+The AI models (MediaPipe Face Landmarker ~4 MB, selfie segmenter ~16 MB) load from a CDN the first time. Offline, points start from a template instead.
 
 ## Flow
 
 1. Consent → profile (male) → front photo → side photo (upload or camera, with photo instructions)
-2. **Detection**: MediaPipe 478‑point face mesh for the front; MediaPipe person segmentation (hair / face skin / body skin / background) for the hairline, ears, neck and the profile outline. The profile works facing left or right (a "flip" button re‑detects if it guessed wrong)
+2. **Detection**: sideways or upside‑down photos are turned upright and tilted ones levelled (eyes level on the front, Frankfort plane on the profile). MediaPipe 478‑point face mesh for the front; for the profile, the traced silhouette (peaks and dips give nose tip, nose base, lips, lip–chin fold, chin, chin bottom, neck point) or, for three‑quarter photos, the mesh midline. Works facing left or right (a "flip" button re‑detects if it guessed wrong)
 3. **Verify**: one point at a time, zoomed, with reference photo / diagram / how‑to (arrow keys nudge, Enter next, Backspace back, R reset, 1‑3 zoom)
 4. **Review** all points (drag with magnifier) → **Analyze**
 5. Dashboard: Overview, Analysis (per pillar; hovering a measurement zooms into it), Plan, Simulate, Compare, Methodology, Calibration & data, PNG report export
 
 ## Scoring
 
-- Each measurement is scored by its distance from the male ideal in units of how much men normally vary (`NORMS` in `js/metrics.js`), so an average face lands mid‑scale.
-- Harmony weighs ratios by importance; Angularity/Dimorphism/Features take research‑based weighted averages of their assessments; the weakest third counts extra.
-- Pillars and Overall are mapped to a population scale matched to FaceIQ (mean 5.44, SD 0.97: 7.03 ≈ top 5%, 7.77 ≈ top 0.8%). Regenerate the mapping after changing norms or weights:
+Follows FaceIQ Labs — see [docs/scoring.md](docs/scoring.md) for sources and derivation.
+
+- 66 ratios with FaceIQ's formulas and male ideal ranges; each scores 10 inside its range and `10·exp(−(d/s)²)` outside, with `s` fitted to FaceIQ's published scores.
+- FaceIQ adjusts ranges for ethnicity; GGFacelon scores against all six of its range sets and uses the best fit (no ethnicity question).
+- Harmony = weighted power mean (p = 0.5) per view, 60% front + 40% side; Overall = geometric mean of the four pillars; scale = FaceIQ's (5 average, 7 ≈ top 6%, 8 ≈ top 0.4%).
+- Regenerate the fitted parameters (`js/norms.js`):
 
 ```bash
-node tools/calibrate.mjs
+node tools/fit-faceiq.mjs --write
 ```
 
 - **Calibration & data** (sidebar): enter known scores for some scans (e.g. FaceIQ results) to fit the scale to them, and export landmarks as JSON (no photos).
@@ -35,18 +38,21 @@ node tools/calibrate.mjs
 
 | File | Purpose |
 | --- | --- |
-| `js/landmarks.js` | 49 front + 21 profile landmark definitions, reference positions, link lines |
-| `js/detect.js` | Face mesh mapping, segmentation-based hairline/ear/neck and profile outline tracer, template fallback |
-| `js/metrics.js` | All measurements (formula, ideal male range, overlay), scoring, pillars, pose checks |
+| `js/landmarks.js` | 49 front + 24 profile landmark definitions, hand‑placed reference positions, link lines |
+| `js/detect.js` | Face mesh mapping, segmentation, 2‑D profile outline tracer, auto‑rotation/levelling, template fallback |
+| `js/metrics.js` | All measurements (FaceIQ formula, overlay), scoring, pillars, scale, pose checks |
+| `js/norms.js` | Generated: ideal ranges (all range sets), score‑curve widths, Harmony weights and map |
 | `js/ui/*.js` | Screens: flow, detecting, verify, review, analyzing, dashboard, analysis, extras, calibration |
-| `tools/calibrate.mjs` | Simulates the male population to calibrate the score scale |
+| `tools/fit-faceiq.mjs`, `tools/faceiq-data.mjs` | Fit FaceIQ's score curves, weights and ranges → `js/norms.js` |
+| `tools/faceiq-bench.mjs`, `tools/bench.js` | Build a local benchmark from FaceIQ's public celebrity wiki and compare detection + scores against it |
+| `tools/side-shape.mjs` | Median jaw‑angle / ear‑notch position for profiles |
 | `serve.py` | Local server with caching disabled |
 
-Norms, weights and the calibration table live in `js/metrics.js`.
+Ranges, curves, weights and the score maps live in `js/norms.js` (generated).
 
 ## Consistency
 
-- Every measurement is a ratio or an angle, so photo size and face‑to‑frame size don't change it.
+- Every measurement is a ratio, an angle, or millimetres on a fixed 190 mm hairline‑to‑chin scale, so photo size and face‑to‑frame size don't change it.
 - Front points are de‑rotated so the pupils are level; profile points are mirrored to face right and rotated onto the Frankfort horizontal (ear canal → under‑eye rim).
 - Same landmarks → same scores. Results are recomputed from stored landmarks, so formula updates apply to old scans.
 - A pose check warns about small/low‑res faces, turned heads and a strongly tilted Frankfort plane.
