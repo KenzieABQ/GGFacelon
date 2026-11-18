@@ -1,6 +1,7 @@
 // GGFacelon — app state and routing.
 import { listScans, saveScan, deleteScan, prefs } from './store.js';
 import { analyze, percentile } from './metrics.js';
+import { measureAppearance, APPEARANCE_VERSION } from './appearance.js';
 import { loadImage } from './img.js';
 import { mountFlow } from './ui/flow.js';
 import { mountDashboard } from './ui/dashboard.js';
@@ -25,6 +26,7 @@ export const app = {
       this.resCache.set(key, analyze(scan.front.lm, scan.side.lm, {
         frontSize: { w: scan.front.w, h: scan.front.h },
         sideSize: { w: scan.side.w, h: scan.side.h },
+        appearance: scan.look || null,
       }));
     }
     return this.resCache.get(key);
@@ -45,6 +47,21 @@ export const app = {
     return this.resCache.get(key);
   },
   scan(id) { return this.scans.find((s) => s.id === id); },
+  // Photo measurements (brows, eye openness, lips, hairline) for a scan; computed once and saved with it.
+  // Older scans get them the first time they're opened. Resolves true when they were (re)computed.
+  lookPending: new Map(),
+  ensureLook(scan) {
+    if (scan.look && scan.look.ver === APPEARANCE_VERSION) return Promise.resolve(false);
+    if (this.lookPending.has(scan.id)) return this.lookPending.get(scan.id);
+    const p = (async () => {
+      const [fi, si] = await Promise.all([this.img(scan.front.url), this.img(scan.side.url)]);
+      scan.look = await measureAppearance(fi, scan.front.lm, si, scan.side.lm);
+      await this.save(scan);
+      return true;
+    })().catch((e) => { console.warn('appearance failed', e); return false; }).finally(() => this.lookPending.delete(scan.id));
+    this.lookPending.set(scan.id, p);
+    return p;
+  },
 
   show(mount, ...args) {
     if (this.cleanup) { try { this.cleanup(); } catch (e) { console.error(e); } }
@@ -79,6 +96,9 @@ function route() {
   if (parts[0] === 'new') return app.show(mountFlow, app, { mode: 'new' });
   if (parts[0] === 'edit' && parts[1] && app.scan(parts[1])) return app.show(mountFlow, app, { mode: 'edit', scan: app.scan(parts[1]) });
   if (parts[0] === 'scan' && app.scan(parts[1])) {
+    const s = app.scan(parts[1]), at = location.hash;
+    // scans saved before photo measurements existed: measure once, then redraw the same page
+    app.ensureLook(s).then((changed) => { if (changed && location.hash === at) route(); });
     return app.show(mountDashboard, app, { scanId: parts[1], tab: parts[2] || 'overview', sub: parts[3] });
   }
   if (parts[0] === 'methodology' || parts[0] === 'compare') {
@@ -94,4 +114,10 @@ function route() {
   route();
   // Warm up the landmark model in the background so the first scan starts faster.
   setTimeout(() => loadDetector().catch(() => {}), 1200);
+  // Older scans: add the photo measurements in the background, one at a time (the open scan goes first)
+  setTimeout(async () => {
+    let any = false;
+    for (const s of [...app.scans]) any = (await app.ensureLook(s)) || any;
+    if (any && /^#\/?scan\//.test(location.hash) === false) route();
+  }, 2500);
 })();

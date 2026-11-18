@@ -2,10 +2,12 @@
 // FaceIQ's own landmarks, ratio values and scores. Run from the app's page console (or the dev tools):
 //
 //   const b = await import('/tools/bench.js'); const r = await b.run({ n: 30 }); b.report(r)
+//   await b.upload(r)   // → tools/testdata/bench-raw.json for `node tools/fit-looks.mjs --write`
 //
 // Needs tools/testdata/faceiq-bench.json (node tools/faceiq-bench.mjs). Photos are loaded by URL, not saved.
 import { detect } from '../js/detect.js';
-import { analyze } from '../js/metrics.js';
+import { analyze, measure } from '../js/metrics.js';
+import { measureAppearance } from '../js/appearance.js';
 
 const load = (src) => new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = () => rej(new Error('load ' + src)); i.src = src; });
 
@@ -28,20 +30,24 @@ export async function run({ n = 99, only = null, verbose = true } = {}) {
       const [fi, si] = await Promise.all([load(f.photos.front), load(f.photos.side)]);
       const rf = await detect('front', fi);
       const rs = await detect('side', si, { front: rf.lm, skin: rf.skin });
-      const ipd = Math.hypot(f.lm.front.pupil_l.x - f.lm.front.pupil_r.x, f.lm.front.pupil_l.y - f.lm.front.pupil_r.y);
+      // a few FaceIQ pages omit the pupils: scale landmark errors by our own pupil distance then
+      const P = f.lm.front.pupil_l && f.lm.front.pupil_r ? f.lm.front : rf.lm;
+      const ipd = Math.hypot(P.pupil_l.x - P.pupil_r.x, P.pupil_l.y - P.pupil_r.y);
       const hS = f.lm.side.me && f.lm.side.n ? Math.hypot(f.lm.side.me.x - f.lm.side.n.x, f.lm.side.me.y - f.lm.side.n.y) : 1;
       const err = { front: {}, side: {} };
       const sgn = { front: {}, side: {} };
       for (const [a, b] of Object.entries(FRONT_MAP)) if (f.lm.front[a] && rf.lm[b]) { err.front[a] = Math.hypot(rf.lm[b].x - f.lm.front[a].x, rf.lm[b].y - f.lm.front[a].y) / ipd; sgn.front[a] = [(rf.lm[b].x - f.lm.front[a].x) / ipd, (rf.lm[b].y - f.lm.front[a].y) / ipd]; }
       const fdir = Math.sign((f.lm.side.prn?.x ?? 1) - (f.lm.side.ramus?.x ?? 0)) || 1;
       for (const [a, b] of Object.entries(SIDE_MAP)) if (f.lm.side[a] && rs.lm[b]) { err.side[a] = Math.hypot(rs.lm[b].x - f.lm.side[a].x, rs.lm[b].y - f.lm.side[a].y) / hS; sgn.side[a] = [fdir * (rs.lm[b].x - f.lm.side[a].x) / hS, (rs.lm[b].y - f.lm.side[a].y) / hS]; }
-      const res = analyze(rf.lm, rs.lm);
+      const look = await measureAppearance(fi, rf.lm, si, rs.lm);
+      const res = analyze(rf.lm, rs.lm, { appearance: look });
+      const rawM = Object.fromEntries(Object.entries(measure(rf.lm, rs.lm, null, { raw: true }).raw).map(([k, v]) => [k, Number.isFinite(v) ? +v.toFixed(4) : null]));
       const vals = {};
       for (const [id, r] of Object.entries(f.ratios)) if (res.values[id]) vals[id] = { fiq: r.v, ours: res.values[id].v, fiqS: r.s, ourS: res.values[id].s };
       const row = { slug: f.slug, name: f.name, eth: f.ethnicity, fiq: { overall: f.overall, harmony: f.harmony, front: f.front, side: f.side, angularity: f.angularity, dimorphism: f.dimorphism, features: f.features },
         ours: { overall: res.overall, harmony: res.pillars.harmony.score, front: res.pillars.harmony.front, side: res.pillars.harmony.side, angularity: res.pillars.angularity.score, dimorphism: res.pillars.dimorphism.score, features: res.pillars.features.score },
         raw: { front: res.pillars.harmony.raw.front, side: res.pillars.harmony.raw.side, angularity: res.pillars.angularity.raw, dimorphism: res.pillars.dimorphism.raw, features: res.pillars.features.raw },
-        rangeSet: res.rangeSet, sideSource: rs.source, dir: rs.dir, err, sgn, vals, ms: Math.round(performance.now() - t0), lm: { front: rf.lm, side: rs.lm } };
+        rangeSet: res.rangeSet, rawM, look: look.v, hidden: look.hidden, sideSource: rs.source, dir: rs.dir, err, sgn, vals, ms: Math.round(performance.now() - t0), lm: { front: rf.lm, side: rs.lm } };
       out.push(row);
       if (verbose) console.log(`${out.length} ${f.name}: FaceIQ ${f.overall} vs ours ${res.overall.toFixed(2)} | side ${rs.source}`);
     } catch (e) {
@@ -50,6 +56,20 @@ export async function run({ n = 99, only = null, verbose = true } = {}) {
     }
   }
   return out;
+}
+
+// Save the compact per-face data (raw measurements, appearance, FaceIQ's numbers) for offline fitting in Node
+// (tools/fit-looks.mjs). Needs `python3 tools/sink.py` running (writes tools/testdata/<name>.json).
+export async function upload(rows = window.__bench, name = 'bench-raw') {
+  const data = await fetch('/tools/testdata/faceiq-bench.json', { cache: 'no-store' }).then((r) => r.json());
+  const bySlug = Object.fromEntries(data.faces.map((f) => [f.slug, f]));
+  const faces = rows.filter((r) => !r.error).map((r) => {
+    const f = bySlug[r.slug];
+    return { slug: r.slug, name: r.name, eth: r.eth, fiq: r.fiq, sideSource: r.sideSource, rawM: r.rawM, look: r.look, hidden: r.hidden,
+      ratios: Object.fromEntries(Object.entries(f.ratios).map(([id, x]) => [id, { v: x.v, s: x.s, lo: x.lo, hi: x.hi }])) };
+  });
+  const res = await fetch('http://localhost:5181/' + name, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ built: new Date().toISOString(), faces }) });
+  return res.status;
 }
 
 const mean = (a) => a.reduce((s, x) => s + x, 0) / (a.length || 1);
@@ -83,20 +103,4 @@ export function report(rows = window.__bench) {
     ratios: ratio,
     sideSources: ok.reduce((a, r) => ((a[r.sideSource] = (a[r.sideSource] || 0) + 1), a), {}),
   };
-}
-
-// Least-squares maps from our raw pillar values to FaceIQ's displayed scores (paste into js/norms.js AGG).
-// Harmony views map raw → FaceIQ's front/side harmony; the other pillars map raw → FaceIQ's pillar score.
-export function fitCalibration(rows = window.__bench) {
-  const ok = rows.filter((r) => !r.error && r.raw);
-  const out = {};
-  for (const [k, target] of [['front', 'front'], ['side', 'side'], ['angularity', 'angularity'], ['dimorphism', 'dimorphism'], ['features', 'features']]) {
-    const pts = ok.map((r) => ({ x: r.raw[k], y: r.fiq[target] })).filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
-    const mx = mean(pts.map((p) => p.x)), my = mean(pts.map((p) => p.y));
-    const b = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / (pts.reduce((s, p) => s + (p.x - mx) ** 2, 0) || 1);
-    const a = my - b * mx;
-    const rmse = Math.sqrt(mean(pts.map((p) => (a + b * p.x - p.y) ** 2)));
-    out[k] = { a: +a.toFixed(4), b: +b.toFixed(4), r: +corr(pts.map((p) => p.x), pts.map((p) => p.y)).toFixed(3), rmse: +rmse.toFixed(3), n: pts.length };
-  }
-  return out;
 }

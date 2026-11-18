@@ -3,7 +3,7 @@
 //  • 66 Harmony ratios (33 front, 33 side) with FaceIQ's formulas and male ideal ranges (js/norms.js).
 //  • Each ratio scores 10 inside its ideal range and falls off as 10·exp(−(d/s)²) outside it, with a
 //    per-ratio width s fitted to FaceIQ's own scores.
-//  • Harmony = 60% front + 40% side; each view is a weighted power mean (p = 0.5, leaning on weak ratios)
+//  • Harmony = 70% front + 30% side (FaceIQ: 60/40; profile angles are measured less reliably); each view is a weighted power mean (p = 0.5, leaning on weak ratios)
 //    mapped onto FaceIQ's 0–10 scale. Angularity, Dimorphism and Features are built the same way from
 //    groups of measurements. Overall = geometric mean of the four pillars (the weakest pillar drags most).
 //  • The scale is FaceIQ's: 5 = average man, 7 ≈ 94th percentile, 8 ≈ 99.6th.
@@ -313,6 +313,43 @@ F({ id: 'cheek_lean', name: 'Lower Face Taper', unit: '%', hm: false, extra: tru
   desc: 'Width across the jaw corners compared with the cheekbones. A clear taper from cheekbones to jaw reads as lean and defined.',
   how: 'jaw‑corner width ÷ cheekbone width × 100' });
 
+// ── APPEARANCE ── read from the photo's pixels around the landmarks (js/appearance.js), not from geometry.
+// f receives the measured values as its third argument. Overlays point at the region that was read.
+const LOOK = (o) => F({ hm: false, extra: true, look: true, group: 'Appearance', f: (N, c, L) => L?.[o.id] ?? NaN, ...o });
+const browLine = (N, s, o = {}) => [seg(N['brI_' + s], N['brP_' + s], o), seg(N['brP_' + s], N['brT_' + s], o)];
+LOOK({ id: 'brow_thickness', name: 'Eyebrow Thickness', unit: 'mm',
+  ov: (N) => [...browLine(N, 'r', { label: true }), ...browLine(N, 'l')],
+  desc: 'Height of the brow hair, measured from the photo along each brow. Full, thick brows frame the eyes and read as masculine; thin or over‑plucked brows soften the eye area.',
+  how: 'median height of the dark brow band (half‑contrast edges against the skin above and below) over the inner two‑thirds of each brow, in mm' });
+LOOK({ id: 'brow_density', name: 'Eyebrow Density', unit: '%',
+  ov: (N) => [...browLine(N, 'r', { label: true }), ...browLine(N, 'l')],
+  desc: 'How dark and filled‑in the brows are against the surrounding skin. Sparse or very light brows make the face look unfinished.',
+  how: '(forehead skin brightness − brow brightness) ÷ skin brightness × 100' });
+LOOK({ id: 'brow_tail_reach', name: 'Brow Tail Length', unit: 'x',
+  ov: (N) => [vh(N.exo_r, N.brT_r, N.exo_r.x, { label: true }), vh(N.exo_l, N.brT_l, N.exo_l.x), ...browLine(N, 'r', { dim: true }), ...browLine(N, 'l', { dim: true })],
+  desc: 'How far the brow tail runs past the outer eye corner, in eye widths. Brows should at least reach the outer corner; a tail a little beyond it frames the eye.',
+  how: 'horizontal distance from the outer eye corner to where the brow hair ends ÷ eye width (0 = ends right above the corner)' });
+LOOK({ id: 'brow_eye_gap', name: 'Brow‑to‑Eye Distance', unit: 'mm',
+  ov: (N) => [vh(N.brP_r, N.lidU_r, N.pupil_r.x, { label: true }), vh(N.brP_l, N.lidU_l, N.pupil_l.x)],
+  desc: 'Gap between the bottom of the brow and the upper eyelid, above the pupil. A small gap — low brows and little upper‑lid show — gives the deep‑set, intense eye area; a large gap reads as surprised or tired.',
+  how: 'upper lid → lower edge of the brow hair, straight above the pupil, in mm' });
+LOOK({ id: 'iris_exposure', name: 'Eye Openness', unit: 'x',
+  ov: (N) => [vh(N.lidU_r, N.lidL_r, N.pupil_r.x, { label: true }), vh(N.lidU_l, N.lidL_l, N.pupil_l.x)],
+  desc: 'Eye opening compared with the size of the iris. Lids that cover a little of the top of the iris and meet its bottom read as calm and confident; white showing above or below the iris reads as startled or tired.',
+  how: 'upper‑to‑lower lid distance at the pupil ÷ iris diameter (iris edge found in the photo)' });
+LOOK({ id: 'scleral_show', name: 'Lower Scleral Show', unit: 'mm',
+  ov: (N) => [vh(N.pupil_r, N.lidL_r, N.pupil_r.x, { label: true }), vh(N.pupil_l, N.lidL_l, N.pupil_l.x)],
+  desc: 'White of the eye visible between the iris and the lower lid. Ideally none — the lower lid meets the iris.',
+  how: 'lower lid − bottom edge of the iris, in mm (0 = the lid touches the iris)' });
+LOOK({ id: 'lip_fullness', name: 'Lip Fullness', unit: '%',
+  ov: (N) => [vh(N.ls, N.li, N.ls.x, { label: true }), hw(N.ch_r, N.ch_l, undefined, { dim: true })],
+  desc: 'Total lip height compared with mouth width. Moderately full lips are attractive on men; very thin lips age the face.',
+  how: '(bottom of the lower lip − top of the upper lip) ÷ mouth width × 100' });
+LOOK({ id: 'temple_recession', name: 'Temple Recession', unit: '%',
+  ov: (N) => [hw(N.temple_r, N.temple_l, N.trichion.y, { dash: true, ticks: false }), vh(N.trichion, N.glabella, N.trichion.x, { label: true })],
+  desc: 'How much higher the hairline sits at the temple corners than at the centre. Zero or below means a full, straight hairline; a receding hairline shows as a positive value.',
+  how: '(hairline height at the temple corners − at the centre) ÷ face height × 100, from the hair segmentation' });
+
 // ── SIDE ── (frame: facing +x, levelled to the Frankfort plane)
 const lineDist = (P, A, B, c) => -fwdDist(P, A, B) * c.mm; // + = behind the line, as FaceIQ reports it
 const lineOv = (A, B, P, label) => [seg(...ext(A, B, 0.15), { dim: !label }), seg(P, footOn(P, A, B), { label }), pt(P)];
@@ -471,10 +508,24 @@ export const METRIC_BY_ID = Object.fromEntries(M.map((m) => [m.id, m]));
 const EXTRA_NORMS = {
   symmetry: { lo: 0, hi: 1.2, s: 1.6, mu: 1.7, sd: 0.9 },
   cheek_lean: { lo: 78, hi: 88, s: 7, mu: 86, sd: 4.5 },
+  ...(AGG.look || {}),
 };
 for (const m of M) {
-  const n = FIQ_NORMS[m.id] || EXTRA_NORMS[m.id];
-  Object.assign(m, { lo: n.lo, hi: n.hi, s: n.s, sig: n.s, mean: n.mu, sd: n.sd, w: AGG.w[m.id] ?? 1 });
+  const n = FIQ_NORMS[m.id] || EXTRA_NORMS[m.id] || { lo: 0, hi: 0, s: 1, mu: 0, sd: 1 };
+  // weight: FaceIQ's importance × how reliably the measurement agrees with FaceIQ's (AGG.rel); photo
+  // measurements carry AGG.lookK on top
+  const w = (AGG.w[m.id] ?? 1) * (AGG.rel?.[m.id] ?? 1) * (m.look ? AGG.lookK ?? 1 : 1);
+  Object.assign(m, { lo: n.lo, hi: n.hi, s: n.s, sig: n.s, mean: n.mu, sd: n.sd, w: +w.toFixed(3), baseW: AGG.w[m.id] ?? 1, rel: AGG.rel?.[m.id] ?? 1 });
+}
+// Which profile points each side metric reads (recorded by running it on a recording stand-in), so a metric
+// can be left out when one of its points is hidden in the photo.
+for (const m of M) {
+  if (m.view !== 'side') continue;
+  const used = new Set();
+  const N = new Proxy({}, { get: (_, k) => { if (typeof k === 'string') used.add(k); return { x: Math.random() * 100, y: Math.random() * 100 }; } });
+  const c = new Proxy({}, { get: () => 1 });
+  try { m.f(N, c); } catch { /* only the reads matter */ }
+  m.deps = [...used];
 }
 
 // ───────────────────────── scoring ─────────────────────────
@@ -547,7 +598,7 @@ export function ratioColor(s) {
 // cheekbones and eye size); larger regions outweigh small peripheral ones.
 const A = (id, name, metrics, desc, w) => ({ id, name, metrics, desc, w });
 export const PILLARS = [
-  { id: 'harmony', name: 'Harmony', blurb: 'How closely your proportions fall inside their ideal ranges — 33 front and 33 side ratios, 60% front and 40% side.' },
+  { id: 'harmony', name: 'Harmony', blurb: 'How closely your proportions fall inside their ideal ranges — 33 front and 33 side ratios, 70% front and 30% side.' },
   { id: 'angularity', name: 'Angularity', blurb: 'How sharp and defined your bone structure reads: cheekbones, jaw, chin and the area under the jaw.',
     items: [
       A('cheekbones', 'Cheekbone Prominence', [['cheekbone_height', 2], ['bitemporal', 1], ['orbital_vector', 1], ['midface_proj', 1]], 'High, forward cheekbones that are wider than the temples.', 0.2),
@@ -559,26 +610,27 @@ export const PILLARS = [
   { id: 'dimorphism', name: 'Dimorphism', blurb: 'How strongly your features show male‑typical traits.',
     items: [
       A('d_jaw', 'Jaw', [['bigonial', 2], ['gonial', 1], ['ramus_mandible', 1], ['jaw_slope', 1]], 'Wide jaw, tall ramus, sharp angle.', 0.2),
-      A('d_brow', 'Brow Ridge', [['brow_low_set', 2], ['browridge_incl', 1], ['nasofrontal', 1]], 'Low brows and a projecting brow ridge.', 0.18),
+      A('d_brow', 'Brows & Brow Ridge', [['brow_low_set', 2], ['brow_eye_gap', 2], ['brow_density', 2], ['brow_thickness', 1], ['browridge_incl', 1], ['nasofrontal', 1]], 'Low, dark, full brows over a projecting brow ridge.', 0.18),
       A('d_shape', 'Face Shape', [['fwhr', 2], ['total_wh', 1], ['midface_ratio', 1]], 'Wide, compact face proportions.', 0.14),
-      A('d_eyes', 'Eyes', [['canthal_tilt', 1], ['eye_ar', 2]], 'Narrow, horizontally long eyes with positive tilt.', 0.08),
+      A('d_eyes', 'Eyes', [['canthal_tilt', 1], ['eye_ar', 2], ['iris_exposure', 1]], 'Narrow, horizontally long eyes with positive tilt and lids close to the iris.', 0.08),
       A('d_nose', 'Nose', [['icd_nose', 1], ['nasal_projection', 1], ['nasal_wh', 1]], 'A proportionate, well‑projected nose.', 0.07),
       A('d_hair', 'Hairline', [['top_third', 2], ['browridge_incl', 1]], 'Forehead height and slope.', 0.04),
-      A('d_lips', 'Lips', [['lip_ratio', 1], ['e_lower', 1], ['e_upper', 1]], 'Moderate lip fullness and projection.', 0.04),
+      A('d_lips', 'Lips', [['lip_ratio', 1], ['lip_fullness', 1], ['e_lower', 1], ['e_upper', 1]], 'Moderate lip fullness and projection.', 0.04),
       A('d_chin', 'Chin', [['chin_philtrum', 2], ['fh_recession', 1]], 'A tall, projecting chin.', 0.12),
       A('d_cheek', 'Cheekbones', [['cheekbone_height', 1], ['bitemporal', 1]], 'High cheekbones.', 0.07),
       A('d_neck', 'Neck', [['neck_width', 2], ['submental', 1]], 'A thick neck and sharp neck–chin angle.', 0.06),
     ] },
-  { id: 'features', name: 'Features', blurb: 'Feature‑by‑feature assessment of eyes, brows, nose, lips, jaw, chin, cheeks, forehead, ears and symmetry. (Skin is not assessed — it can’t be measured from landmarks.)',
+  { id: 'features', name: 'Features', blurb: 'Feature‑by‑feature assessment of eyes, brows, nose, lips, jaw, chin, cheeks, forehead, hairline, ears and symmetry — from the landmarks and, for brows, eye openness, lips and hairline, from the photo itself. (Skin is not assessed.)',
     items: [
-      A('f_eyes', 'Eyes', [['canthal_tilt', 2], ['eye_ar', 2], ['one_eye_apart', 1], ['esr', 1], ['orbital_vector', 1]], 'Shape, tilt and spacing of the eyes.', 0.2),
-      A('f_brows', 'Eyebrows', [['brow_low_set', 2], ['brow_tilt', 1], ['brow_length', 1]], 'Position, tilt and length of the brows.', 0.1),
+      A('f_eyes', 'Eyes', [['canthal_tilt', 2], ['eye_ar', 2], ['one_eye_apart', 1], ['esr', 1], ['orbital_vector', 1], ['brow_eye_gap', 1], ['iris_exposure', 1], ['scleral_show', 1]], 'Shape, tilt and spacing of the eyes, how open they are and how closely the brows frame them.', 0.2),
+      A('f_brows', 'Eyebrows', [['brow_low_set', 2], ['brow_tilt', 1], ['brow_length', 1], ['brow_density', 2], ['brow_thickness', 1], ['brow_tail_reach', 1]], 'Position, tilt and length of the brows, and how full and dark they are in the photo.', 0.12),
       A('f_nose', 'Nose', [['icd_nose', 1], ['bridge_nose', 1], ['nose_tip_pos', 1], ['nasofrontal', 1], ['nasolabial', 1], ['nasal_projection', 1], ['nasal_tip_angle', 1], ['tip_rotation', 1], ['nasofacial', 1], ['nasomental', 1]], 'Width, bridge, projection and angles of the nose.', 0.15),
-      A('f_lips', 'Lips', [['lip_ratio', 1], ['cupid_depth', 1], ['mouth_corner', 1], ['mouth_nose', 1], ['ipd_mouth', 1], ['e_upper', 1], ['e_lower', 1], ['s_upper', 1], ['s_lower', 1]], 'Lip proportions and position against profile lines.', 0.13),
+      A('f_lips', 'Lips', [['lip_ratio', 1], ['lip_fullness', 1], ['cupid_depth', 1], ['mouth_corner', 1], ['mouth_nose', 1], ['ipd_mouth', 1], ['e_upper', 1], ['e_lower', 1], ['s_upper', 1], ['s_lower', 1]], 'Lip proportions and position against profile lines.', 0.13),
       A('f_jaw', 'Jaw', [['gonial', 2], ['bigonial', 2], ['jfa', 1], ['jaw_slope', 1], ['mpa', 1], ['ramus_mandible', 1], ['gonion_mouth', 1]], 'Jaw width, angle and slope.', 0.14),
       A('f_chin', 'Chin', [['chin_philtrum', 2], ['fh_recession', 2], ['mentolabial', 1], ['holdaway', 1], ['z_angle', 1]], 'Chin height and projection.', 0.09),
       A('f_cheeks', 'Cheeks', [['cheekbone_height', 2], ['cheek_lean', 1]], 'Cheekbone height and lower‑face taper.', 0.07),
       A('f_forehead', 'Forehead', [['top_third', 2], ['bitemporal', 1], ['browridge_incl', 1], ['upper_forehead', 1]], 'Forehead height, width and slope.', 0.04),
+      A('f_hair', 'Hairline', [['temple_recession', 2], ['top_third', 1]], 'A full, straight hairline at a normal height.', 0.03),
       A('f_ears_neck', 'Ears & Neck', [['ear_angle', 1], ['ear_ratio', 1], ['neck_width', 1], ['submental', 1]], 'Ear protrusion and neck build.', 0.02),
       A('f_sym', 'Symmetry', [['symmetry', 2], ['iaa_jfa_dev', 1]], 'Left–right balance and midline alignment.', 0.06),
     ] },
@@ -599,6 +651,8 @@ export function percentile(s) {
   if (z > 0) p = 1 - p;
   return p * 100;
 }
+// "Higher than X% of men": whole percent, with a decimal near the top so 99.6% doesn't read as 100%
+export const pctText = (p) => (p >= 99 ? Math.min(99.9, p).toFixed(1) : p <= 1 ? Math.max(0.1, p).toFixed(1) : p.toFixed(0));
 const show = (raw, [a, b]) => clamp(a + b * raw, 0, 10);
 const PILLAR_MAP = AGG.pillar || {};
 // Front/side Harmony maps: fitted on the FaceIQ benchmark when available, else FaceIQ's published examples
@@ -636,25 +690,53 @@ export const RANGE_SET_IDS = Object.keys(RANGE_SETS);
 // each of FaceIQ's range sets and the best-fitting set is used throughout (opts.set forces one).
 export function scoreValues(raw, opts = {}) {
   const hmList = M.filter((m) => m.hm);
-  let rangeSet = opts.set || null, values = null, hb = null;
+  // Every set is tried; each set's average Harmony on the benchmark is subtracted first, so the choice goes to
+  // the set this face fits unusually well rather than to whichever set is most lenient (AGG.setBias).
+  const setBias = AGG.setBias || {};
+  let rangeSet = opts.set || null, values = null, hb = null, bestKey = -Infinity;
   for (const set of opts.set ? [opts.set] : RANGE_SET_IDS.length ? RANGE_SET_IDS : [null]) {
     const v = valuesFor(raw, set), hh = harmonyOf(v, hmList);
-    if (!hb || hh.h > hb.h + 1e-9) { hb = hh; values = v; rangeSet = set; }
+    const key = hh.h - (setBias[set] || 0);
+    if (key > bestKey + 1e-9) { bestKey = key; hb = hh; values = v; rangeSet = set; }
   }
   const item = (id, w) => ({ s: values[id].s, w: Number.isFinite(values[id].v) ? w : 0 });
+  // pillar from its assessments; view = 'front' | 'side' keeps only that photo's measurements
+  const pillarOf = (p, view) => {
+    const items = p.items.map((a) => {
+      const ms = a.metrics.filter(([id]) => !view || METRIC_BY_ID[id].view === view);
+      return { ...a, score: ms.length ? powerMean(ms.map(([id, w]) => item(id, w * METRIC_BY_ID[id].w)), AGG.p) : NaN };
+    });
+    return { raw: powerMean(items.map((a) => ({ s: a.score, w: a.w })), AGG.p), items };
+  };
   const pillars = {}, rawP = {};
   rawP.front = hb.f; rawP.side = hb.sd;
   const front = show(rawP.front, VIEW_MAP.front), side = show(rawP.side, VIEW_MAP.side);
   pillars.harmony = { score: AGG.front * front + AGG.side * side, front, side, raw: rawP, items: hmList.map((m) => m.id) };
   for (const p of PILLARS.slice(1)) {
-    const items = p.items.map((a) => ({ ...a, score: powerMean(a.metrics.map(([id, w]) => item(id, w * METRIC_BY_ID[id].w)), AGG.p) }));
-    rawP[p.id] = powerMean(items.map((a) => ({ s: a.score, w: a.w })), AGG.p);
-    pillars[p.id] = { score: show(rawP[p.id], PILLAR_MAP[p.id] || [AGG.A, AGG.B]), raw: rawP[p.id], items };
+    const { raw: r, items } = pillarOf(p);
+    rawP[p.id] = r;
+    pillars[p.id] = { score: show(r, PILLAR_MAP[p.id] || [AGG.A, AGG.B]), raw: r, items };
   }
   // Geometric mean of the pillars (FaceIQ), then stretched so the benchmark keeps FaceIQ's spread of scores
   const gm = powerMean(Object.entries(PILLAR_WEIGHTS).map(([k, w]) => ({ s: pillars[k].score, w })), 0);
   const overall = AGG.overall ? show(gm, AGG.overall) : gm;
-  return { values, pillars, overall, rawOverall: overall, percentile: percentile(overall), rangeSet };
+  // Front profile and side profile on their own: the same four pillars from one photo's measurements only,
+  // each mapped onto the same scale (AGG.byView), so either can be read like the overall score.
+  const views = {};
+  for (const view of ['front', 'side']) {
+    const BV = AGG.byView?.[view] || {};
+    const v = { harmony: view === 'front' ? front : side, raw: {} };
+    for (const p of PILLARS.slice(1)) {
+      const r = pillarOf(p, view).raw;
+      v.raw[p.id] = r;
+      v[p.id] = Number.isFinite(r) ? show(r, BV[p.id] || PILLAR_MAP[p.id] || [AGG.A, AGG.B]) : NaN;
+    }
+    const g = powerMean(['harmony', 'angularity', 'dimorphism', 'features'].map((k) => ({ s: v[k], w: 1 })), 0);
+    v.rawGm = g;
+    v.score = show(g, BV.overall || AGG.overall || [0, 1]);
+    views[view] = v;
+  }
+  return { values, pillars, overall, rawOverall: overall, percentile: percentile(overall), rangeSet, views };
 }
 
 // ───────────────────────── run analysis ─────────────────────────
@@ -669,29 +751,38 @@ function withDerivedSide(side) {
   return s;
 }
 
-export function measure(front, side) {
+// look: the appearance measurements saved with the scan ({ v: {id: value}, hidden: [profile point ids] })
+// opts.raw: skip the convention offsets (the benchmark fits them from raw values)
+export function measure(front, side, look = null, opts = {}) {
   side = withDerivedSide(side);
   const ff = frontFrame(front), sf = sideFrame(side);
   const fc = frontCtx(ff.N);
   // Side millimetres: carry the front photo's 190 mm hairline-to-chin scale over via nasion → menton
   const nmF = ff.N.me.y - ff.N.nasion.y, nmS = sf.N.me.y - sf.N.n.y;
   const sc = sideCtx(sf.N, nmS > 0 && nmF > 0 ? fc.mm * (nmF / nmS) : null);
+  const L = look?.v || null;
+  const hidden = new Set(look?.hidden || []);
   const raw = {};
   for (const m of M) {
     const N = m.view === 'front' ? ff.N : sf.N;
     const c = m.view === 'front' ? fc : sc;
     let v;
-    try { v = m.f(N, c); } catch { v = NaN; }
+    try { v = m.f(N, c, L); } catch { v = NaN; }
+    if (v == null) v = NaN;
+    // a profile point under hair (e.g. a fringe over the forehead) can't be measured: leave its metrics out
+    if (m.deps && m.deps.some((k) => hidden.has(k))) v = NaN;
+    // convention offsets: FaceIQ places some interior profile points differently (fitted on its benchmark)
+    if (Number.isFinite(v) && AGG.shift?.[m.id] && !opts.raw) v -= AGG.shift[m.id];
     raw[m.id] = v;
   }
   // an estimated supratip/infratip can't give a meaningful tip angle — leave it out for older scans
   if (side._derived) raw.nasal_tip_angle = NaN;
-  return { raw, ff, fc, sf, sc };
+  return { raw, ff, fc, sf, sc, hidden: [...hidden] };
 }
 
 export function analyze(front, side, meta = {}) {
-  const { raw, ff, fc, sf, sc } = measure(front, side);
-  return { ...scoreValues(raw), quality: quality(front, side, ff, fc, sf, sc, meta), frames: { front: ff, side: sf }, mm: { front: fc.mm, side: sc.mm } };
+  const { raw, ff, fc, sf, sc, hidden } = measure(front, side, meta.appearance);
+  return { ...scoreValues(raw), quality: quality(front, side, ff, fc, sf, sc, { ...meta, hidden }), frames: { front: ff, side: sf }, mm: { front: fc.mm, side: sc.mm }, look: meta.appearance || null };
 }
 
 // Photo / pose checks. These only warn — the measurements stay ratio‑based either way.
@@ -713,6 +804,11 @@ function quality(front, side, ff, fc, sf, sc, meta) {
   if (sh) {
     const faceFrac = sc.H / sh.h;
     if (faceFrac < 0.15) out.push({ level: 'warn', view: 'side', text: 'Profile face is small in the frame — crop closer for better precision.' });
+  }
+  if (meta.hidden?.length) {
+    const what = meta.hidden.includes('g') ? 'Hair covers the forehead and brow ridge' : 'Hair covers the upper forehead';
+    const n = M.filter((m) => m.deps && m.deps.some((k) => meta.hidden.includes(k))).length;
+    out.push({ level: 'warn', view: 'side', text: `${what} in the profile photo, so ${n} angle${n === 1 ? '' : 's'} there can’t be measured and ${n === 1 ? 'is' : 'are'} left out. Push the hair back for a complete profile.` });
   }
   if (Math.abs(sf.tilt) > 14) out.push({ level: 'warn', view: 'side', text: `Frankfort plane is ${sf.tilt.toFixed(0)}° off level. Angles are measured against it, but double‑check the ear‑canal and under‑eye points.` });
   else out.push({ level: 'ok', view: 'side', text: `Profile levelled to the Frankfort plane (${sf.tilt >= 0 ? '+' : ''}${sf.tilt.toFixed(1)}°).` });

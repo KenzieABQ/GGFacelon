@@ -1,7 +1,7 @@
 // Plan, Simulate, Compare, Methodology, and the shareable report image.
 import { $, $$, el, esc, icon, toast } from './dom.js';
 import { editableStage } from './review.js';
-import { analyze, METRICS, METRIC_BY_ID, PILLARS, PILLAR_WEIGHTS, rating, scoreColor, ratioColor, fmt, fmtRange } from '../metrics.js';
+import { analyze, METRICS, METRIC_BY_ID, PILLARS, PILLAR_WEIGHTS, rating, scoreColor, ratioColor, fmt, fmtRange, pctText } from '../metrics.js';
 import { FRONT, SIDE } from '../landmarks.js';
 import { bbox } from './draw.js';
 import { faceThumb } from './dashboard.js';
@@ -14,22 +14,22 @@ const AREAS = [
   { id: 'chin', name: 'Chin', metrics: ['chin_philtrum', 'fh_recession', 'mentolabial', 'holdaway', 'z_angle'],
     soft: ['Chin beard growth adds visual height and projection.', 'Fix forward head posture; it makes the chin read as recessed from the side.'],
     hard: ['Chin filler, implant or sliding genioplasty — surgical consult.'] },
-  { id: 'eyes', name: 'Eyes', metrics: ['canthal_tilt', 'eye_ar', 'one_eye_apart', 'esr', 'orbital_vector'],
+  { id: 'eyes', name: 'Eyes', metrics: ['canthal_tilt', 'eye_ar', 'one_eye_apart', 'esr', 'orbital_vector', 'iris_exposure', 'scleral_show', 'brow_eye_gap'],
     soft: ['Sleep 7–9 hours and treat allergies to reduce puffiness that hides eye shape.', 'Lower body fat thins the upper‑lid area and sharpens the eye.', 'Grooming the outer brow can change how the eye’s tilt reads.'],
     hard: ['Canthoplasty and lid procedures exist but carry real risk — only with an oculoplastic surgeon.'] },
-  { id: 'brows', name: 'Eyebrows', metrics: ['brow_low_set', 'brow_tilt', 'brow_length'],
-    soft: ['Clean up stray hairs but keep a full, straight‑ish masculine shape; avoid over‑plucking.', 'Brow gel or a light pencil can fill sparse tails and extend brow length.'],
+  { id: 'brows', name: 'Eyebrows', metrics: ['brow_low_set', 'brow_tilt', 'brow_length', 'brow_thickness', 'brow_density', 'brow_tail_reach'],
+    soft: ['Clean up stray hairs but keep a full, straight‑ish masculine shape; avoid over‑plucking — thickness is easy to lose and slow to regrow.', 'Brow gel or a light pencil can fill sparse areas and extend a short tail past the outer eye corner.', 'Light or sparse brows: a brow tint one shade darker than your hair is the quickest, most reversible fix.', 'Let the brows grow out for 6–8 weeks before reshaping; topical treatments for sparse brows exist — ask a dermatologist.'],
     hard: ['Brow‑bone augmentation or brow lifts — specialist consultation only.'] },
   { id: 'nose', name: 'Nose', metrics: ['icd_nose', 'bridge_nose', 'nose_tip_pos', 'nasofrontal', 'nasolabial', 'nasal_projection', 'nasal_tip_angle', 'tip_rotation', 'nasofacial', 'nasomental', 'frankfort_tip', 'nasal_wh'],
     soft: ['Avoid close, wide‑angle selfies — they enlarge the nose. Shoot from 1.5 m+ or use 2× zoom.', 'Facial hair and hairstyle shift visual balance away from the nose.'],
     hard: ['Rhinoplasty or non‑surgical (filler) rhinoplasty — board‑certified surgeon.'] },
-  { id: 'lips', name: 'Lips & Mouth', metrics: ['lip_ratio', 'cupid_depth', 'mouth_corner', 'mouth_nose', 'ipd_mouth', 'e_upper', 'e_lower', 's_upper', 's_lower', 'b_upper', 'b_lower'],
+  { id: 'lips', name: 'Lips & Mouth', metrics: ['lip_ratio', 'lip_fullness', 'cupid_depth', 'mouth_corner', 'mouth_nose', 'ipd_mouth', 'e_upper', 'e_lower', 's_upper', 's_lower', 'b_upper', 'b_lower'],
     soft: ['Keep lips hydrated and relaxed together at rest.', 'A moustache or beard can balance lip projection against the nose and chin.'],
     hard: ['Orthodontics changes lip support; fillers change volume — dentist or injector consult.'] },
   { id: 'cheeks', name: 'Cheeks', metrics: ['cheekbone_height', 'cheek_lean', 'bitemporal'],
     soft: ['Body‑fat reduction reveals cheekbones and hollows under them.', 'Less sodium and alcohol reduces facial water retention.'],
     hard: ['Cheek filler or implants; buccal fat reduction — specialist consult.'] },
-  { id: 'forehead', name: 'Forehead & Hairline', metrics: ['top_third', 'browridge_incl', 'upper_forehead'],
+  { id: 'forehead', name: 'Forehead & Hairline', metrics: ['top_third', 'browridge_incl', 'upper_forehead', 'temple_recession'],
     soft: ['A haircut with some fringe or textured front shortens a tall forehead.', 'If the hairline is receding, see a dermatologist early about treatment options.'],
     hard: ['Hair transplant or hairline lowering surgery.'] },
   { id: 'neck', name: 'Neck', metrics: ['neck_width', 'submental'],
@@ -48,10 +48,11 @@ const AREAS = [
 
 export function mountPlan(page, app, scan, res) {
   const areas = AREAS.map((a) => {
-    const ms = a.metrics.map((id) => ({ m: METRIC_BY_ID[id], ...res.values[id] }));
-    const avg = ms.reduce((s, x) => s + x.s, 0) / ms.length;
+    // only what could be measured on these photos
+    const ms = a.metrics.map((id) => ({ m: METRIC_BY_ID[id], ...res.values[id] })).filter((x) => Number.isFinite(x.v));
+    const avg = ms.reduce((s, x) => s + x.s, 0) / (ms.length || 1);
     return { ...a, ms, avg, weak: ms.filter((x) => x.s < 7).sort((p, q) => p.s - q.s) };
-  }).sort((a, b) => a.avg - b.avg);
+  }).filter((a) => a.ms.length).sort((a, b) => a.avg - b.avg);
   const focus = areas.filter((a) => a.weak.length);
   const strong = areas.filter((a) => !a.weak.length);
   const v = el(`<div class="plan">
@@ -76,7 +77,8 @@ export function mountPlan(page, app, scan, res) {
 // ───────────────────────── Simulate ─────────────────────────
 export function mountSimulate(page, app, scan, res) {
   const sim = { front: { ...scan.front.lm }, side: { ...scan.side.lm } };
-  const meta = { frontSize: { w: scan.front.w, h: scan.front.h }, sideSize: { w: scan.side.w, h: scan.side.h } };
+  // photo measurements stay as measured (moving a landmark here only changes geometry)
+  const meta = { frontSize: { w: scan.front.w, h: scan.front.h }, sideSize: { w: scan.side.w, h: scan.side.h }, appearance: scan.look || null };
   const v = el(`<div class="simulate">
     <div class="card sim-head fade-up"><div><h2>Simulate</h2><p class="sub">Drag any landmark to see how a change would move your scores. Your saved scan isn’t modified.</p></div>
       <button class="btn ghost" id="simReset">${icon('undo', 15)} Reset</button></div>
@@ -168,23 +170,27 @@ export function mountCompare(page, app, scan, otherId) {
 
 // ───────────────────────── Methodology ─────────────────────────
 export function mountMethodology(page) {
-  const mt = (view) => METRICS.filter((m) => m.view === view).map((m) => `<tr><td><b>${esc(m.name)}</b>${m.extra ? ' <span class="chip tiny ghost">extra</span>' : ''}${!m.hm ? ' <span class="chip tiny ghost">angularity only</span>' : ''}<div class="muted">${esc(m.desc)}</div></td><td class="mono">${esc(m.how)}</td><td class="nowrap">${fmtRange(m)}</td><td class="nowrap">${fmt(m, m.mean)}</td><td>${m.w}</td></tr>`).join('');
+  const mt = (view) => METRICS.filter((m) => m.view === view).map((m) => `<tr><td><b>${esc(m.name)}</b>${m.look ? ' <span class="chip tiny ghost">from photo</span>' : m.extra ? ' <span class="chip tiny ghost">extra</span>' : ''}<div class="muted">${esc(m.desc)}</div></td><td class="mono">${esc(m.how)}</td><td class="nowrap">${fmtRange(m)}</td><td class="nowrap">${fmt(m, m.mean)}</td><td>${m.w}</td></tr>`).join('');
   const lt = (defs) => defs.map((d, i) => `<tr><td class="muted">${i + 1}</td><td><b>${esc(d.name)}</b></td><td class="muted">${esc(d.anat)}</td><td>${esc(d.how)}</td></tr>`).join('');
   const v = el(`<div class="method">
     <section class="card fade-up"><h2>Methodology</h2>
-      <p>GGFacelon measures ${METRICS.filter((m) => m.hm).length} Harmony ratios (33 front, 33 side) plus symmetry and jaw taper from ${FRONT.length} front and ${SIDE.length} profile landmarks, following FaceIQ Labs’ published formulas and landmark conventions. Landmarks start from two AI models: a 478‑point face mesh (MediaPipe Face Landmarker) and a person segmenter (hair, face skin, body skin, clothes, background). Front points come from the mesh. Profiles are read from the traced silhouette — nose tip, nose base, both lips, the lip–chin fold and the chin are its peaks and dips — or, for three‑quarter photos, from the mesh’s midline. Sideways or upside‑down photos are turned upright, and tilted ones are levelled. You then verify each point.</p>
+      <p>GGFacelon measures ${METRICS.filter((m) => m.hm).length} Harmony ratios (33 front, 33 side) plus symmetry and jaw taper from ${FRONT.length} front and ${SIDE.length} profile landmarks, following FaceIQ Labs’ published formulas and landmark conventions. It also reads ${METRICS.filter((m) => m.look).length} things straight from the photo’s pixels that angles can’t capture: eyebrow thickness, darkness and tail length, the gap between brow and eyelid, how open the eyes are against the iris, white under the iris, lip fullness and temple recession. Landmarks start from two AI models: a 478‑point face mesh (MediaPipe Face Landmarker) and a person segmenter (hair, face skin, body skin, clothes, background). Front points come from the mesh. Profiles are read from the traced silhouette — nose tip, nose base, both lips, the lip–chin fold and the chin are its peaks and dips — or, for three‑quarter photos, from the mesh’s midline. Sideways or upside‑down photos are turned upright, and tilted ones are levelled. You then verify each point.</p>
       <h3>Why results are consistent</h3>
       <ul class="dots">
         <li>Every measurement is a ratio, an angle, or millimetres on a fixed 190 mm hairline‑to‑chin scale (as FaceIQ uses), so photo resolution and how big your face is in the frame don’t change it.</li>
         <li>Front: points are rotated so the pupils are level. Profile: points are mirrored to face right and levelled to the Frankfort plane (ear canal → under‑eye rim).</li>
         <li>Scores are a fixed function of the landmarks. The same points always give the same result.</li>
-        <li>The pose check warns when the face is small in the frame, low resolution, or turned.</li>
+        <li>The pose check warns when the face is small in the frame, low resolution, or turned — and when hair hides forehead points in the profile, those angles are left out instead of guessed.</li>
       </ul>
       <h3>Scoring</h3>
-      <p>Each ratio scores <b>10 inside its ideal range</b> and falls off outside it as 10·exp(−(d/s)²), where d is the distance outside the range and s is how forgiving that ratio is — both fitted to FaceIQ’s own published scores. FaceIQ adjusts its ranges for ethnicity; GGFacelon doesn’t ask, so it scores your face against each of FaceIQ’s six range sets and uses the best fit.</p>
-      <p>Harmony combines the ratios with a weighted power mean that leans on weaker ratios (front and side separately, then 60% front + 40% side). The weights reproduce FaceIQ’s published flaw impacts — face width‑to‑height, brow position and eye shape count about five times as much as the nose tip angle or mouth corners. Angularity, Dimorphism and Features (FaceIQ rates these with a vision model) are estimated from groups of measurements and calibrated against FaceIQ’s scores on a benchmark of celebrity faces. Overall is the geometric mean of the four pillars, exactly as FaceIQ combines them, so your weakest pillar pulls hardest.</p>
+      <p>Each ratio scores <b>10 inside its ideal range</b> and falls off outside it as 10·exp(−(d/s)²), where d is the distance outside the range and s is how forgiving that ratio is — both fitted to FaceIQ’s own published scores. FaceIQ adjusts its ranges for ethnicity; GGFacelon doesn’t ask, so it scores your face against each of FaceIQ’s six range sets and uses the one your face fits unusually well (each set’s average result is subtracted first, so the most lenient set doesn’t win by default).</p>
+      <p>Measured against FaceIQ’s own numbers on 64 analysed celebrities, some ratios came out consistently offset — FaceIQ places a few points (brow level, the ear canal, nostril base, profile eye corner) slightly differently. Those offsets are removed before scoring. Each ratio’s weight is also scaled by how reliably it can be measured automatically: front ratios agree closely with FaceIQ, many profile angles much less (a few degrees of landmark error moves them a lot), so a profile angle that is mostly noise can’t sink your score.</p>
+      <p>The photo measurements have their own ideal ranges — full, dark, low‑set brows that reach past the outer eye corner; lids resting close to the iris with no white beneath; moderately full lips; a full hairline (from looksmax.org’s eye‑area and brow guides and the clinical eye‑area literature) — and feed Features and Dimorphism. On the benchmark, brow darkness and a small brow‑to‑eye gap track FaceIQ’s dimorphism scores strongly. Jaw shadow and cheek hollows were tested too and left out: they followed the lighting and double‑chin shadows, not bone structure.</p>
+      <p>Harmony combines the ratios with a weighted power mean that leans on weaker ratios (front and side separately, then 70% front + 30% side — FaceIQ uses 60/40, but profile angles from a photo are less reliable than frontal ratios, so the front carries more). The weights reproduce FaceIQ’s published flaw impacts — face width‑to‑height, brow position and eye shape count about five times as much as the nose tip angle or mouth corners. Angularity, Dimorphism and Features (FaceIQ rates these with a vision model) are estimated from groups of measurements and calibrated against FaceIQ’s scores on a benchmark of celebrity faces. Overall is the geometric mean of the four pillars, exactly as FaceIQ combines them, so your weakest pillar pulls hardest.</p>
+      <p><b>Front profile</b> and <b>Side profile</b> scores repeat the whole calculation with only that photo’s measurements, on the same scale — so you can see whether your face or your profile carries your score.</p>
+      <p>Against FaceIQ on the benchmark (fully automatic landmarks, no corrections), the overall score lands within about 0.9 points on average and ranks faces in much the same order (correlation ≈ 0.7). Checking your landmarks in the verify step brings it closer.</p>
       <p>The scale is FaceIQ’s: <b>5 is the average man, 7 ≈ top 6%, 8 ≈ top 0.4%</b>. You can fine‑tune it with known scores under <b>Calibration</b>.</p>
-      <p class="fine">Full details: <span class="mono">docs/scoring.md</span>. Ideal ranges describe statistical ideals, not a person’s worth. Skin is not assessed.</p>
+      <p class="fine">Full details: <span class="mono">docs/scoring.md</span>. Ideal ranges describe statistical ideals, not a person’s worth. Skin is not assessed. Weights in the tables include the reliability scaling.</p>
     </section>
     <section class="card fade-up"><h2>Front measurements</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Measurement</th><th>Formula</th><th>Ideal (Caucasian set)</th><th>Typical man</th><th>Weight</th></tr></thead><tbody>${mt('front')}</tbody></table></div></section>
     <section class="card fade-up"><h2>Side measurements</h2><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Measurement</th><th>Formula</th><th>Ideal (Caucasian set)</th><th>Typical man</th><th>Weight</th></tr></thead><tbody>${mt('side')}</tbody></table></div></section>
@@ -219,15 +225,23 @@ export async function exportCard(app, scan, res) {
     ctx.restore();
   };
   await ph('front', 70); await ph('side', 555);
-  // score
   const col = (s) => (s >= 7.5 ? '#2f9e6e' : s >= 6 ? '#8aa83a' : s >= 4.5 ? '#d9962b' : '#d4574e');
+  // front / side profile score on each photo
+  for (const [view, x, label] of [['front', 70, 'FRONT PROFILE'], ['side', 555, 'SIDE PROFILE']]) {
+    const sc = res.views?.[view]?.score;
+    if (!Number.isFinite(sc)) continue;
+    ctx.fillStyle = 'rgba(17,24,39,0.78)'; rr(ctx, x + 20, 588, 250, 62, 20); ctx.fill();
+    ctx.fillStyle = '#d1d5db'; ctx.font = font(600, 17); ctx.fillText(label, x + 40, 613);
+    ctx.fillStyle = '#ffffff'; ctx.font = font(700, 26); ctx.fillText(sc.toFixed(2), x + 40, 641);
+  }
+  // score
   ctx.fillStyle = '#fff'; rr(ctx, 70, 710, 940, 300, 32); ctx.fill();
   ctx.fillStyle = '#6b7280'; ctx.font = font(600, 24); ctx.fillText('OVERALL SCORE', 120, 775);
   ctx.fillStyle = col(res.overall); ctx.font = font(700, 128); ctx.fillText(res.overall.toFixed(2), 112, 905);
   const sw = ctx.measureText(res.overall.toFixed(2)).width;
   ctx.fillStyle = '#9ca3af'; ctx.font = font(500, 44); ctx.fillText('/10', 122 + sw, 905);
   ctx.fillStyle = '#111827'; ctx.font = font(600, 30); ctx.fillText(rating(res.overall), 120, 960);
-  ctx.fillStyle = '#6b7280'; ctx.font = font(500, 24); ctx.fillText(`Higher than ${res.percentile.toFixed(0)}% of men`, 120, 995);
+  ctx.fillStyle = '#6b7280'; ctx.font = font(500, 24); ctx.fillText(`Higher than ${pctText(res.percentile)}% of men`, 120, 995);
   PILLARS.forEach((p, i) => {
     const y = 770 + i * 58;
     const s = res.pillars[p.id].score;
@@ -237,7 +251,7 @@ export async function exportCard(app, scan, res) {
     ctx.fillStyle = col(s); ctx.font = font(700, 26); ctx.textAlign = 'right'; ctx.fillText(s.toFixed(2), 1000, y + 30); ctx.textAlign = 'left';
   });
   // highlights
-  const top = METRICS.filter((m) => m.hm).map((m) => ({ m, ...res.values[m.id] })).sort((a, b) => b.s - a.s).slice(0, 4);
+  const top = METRICS.filter((m) => m.hm).map((m) => ({ m, ...res.values[m.id] })).filter((t) => Number.isFinite(t.v)).sort((a, b) => b.s - a.s).slice(0, 4);
   ctx.fillStyle = '#fff'; rr(ctx, 70, 1040, 940, 230, 32); ctx.fill();
   ctx.fillStyle = '#6b7280'; ctx.font = font(600, 22); ctx.fillText('TOP RATIOS', 120, 1095);
   top.forEach((t, i) => {

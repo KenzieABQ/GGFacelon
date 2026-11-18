@@ -7,6 +7,7 @@ import { mountReview } from './review.js';
 import { mountAnalyzing } from './analyzing.js';
 import { mountDetecting } from './detecting.js';
 import { DEFS } from '../landmarks.js';
+import { measureAppearance } from '../appearance.js';
 
 export function mountFlow(root, app, opts) {
   const shell = el(`<div class="flow"><div class="flow-bg"></div><div class="flow-top">
@@ -241,11 +242,16 @@ export function mountFlow(root, app, opts) {
 
   // ── 9. analyse + save ──
   function stepAnalyze() {
+    // photo measurements (brows, eye openness, lips, hairline) run while the animation plays
+    const lookP = Promise.all([app.img(draft.front.url), app.img(draft.side.url)])
+      .then(([fi, si]) => measureAppearance(fi, draft.front.lm, si, draft.side.lm))
+      .catch((e) => { console.warn('appearance failed', e); return null; });
     return mountAnalyzing(body, app, draft, async () => {
       const now = Date.now();
+      const look = await lookP;
       const scan = draft.editing
-        ? { ...draft.editing, front: pack(draft.front), side: pack(draft.side) }
-        : { id: 's' + now.toString(36) + Math.random().toString(36).slice(2, 6), created: now, gender: 'male', front: pack(draft.front), side: pack(draft.side) };
+        ? { ...draft.editing, front: pack(draft.front), side: pack(draft.side), look }
+        : { id: 's' + now.toString(36) + Math.random().toString(36).slice(2, 6), created: now, gender: 'male', front: pack(draft.front), side: pack(draft.side), look };
       try {
         await app.save(scan);
       } catch (e) {

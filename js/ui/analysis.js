@@ -6,10 +6,10 @@ import { PILLARS, METRICS, METRIC_BY_ID, rating, scoreColor, ratioColor, ratioLa
 import { faceThumb } from './dashboard.js';
 
 const UNDERSTAND = {
-  harmony: `Harmony compares your proportions with ideal male ranges — ${METRICS.filter((m) => m.hm && m.view === 'front').length} front ratios (thirds, widths, eye spacing, tilts) and ${METRICS.filter((m) => m.hm && m.view === 'side').length} side ratios (profile angles, nose and lip lines). Each ratio is scored 0–10 by how far it sits from the male ideal, measured against how much men normally vary — a typical man lands mid‑scale, only rare values reach 9–10. Key ratios (FWHR, thirds, eye spacing and tilt, jaw width, chin projection) count up to 5× more than minor ones, weak points count extra, and the pillar is placed on the population scale (5.4 = average).`,
+  harmony: `Harmony compares your proportions with ideal male ranges — ${METRICS.filter((m) => m.hm && m.view === 'front').length} front ratios (thirds, widths, eye spacing, tilts) and ${METRICS.filter((m) => m.hm && m.view === 'side').length} side ratios (profile angles, nose and lip lines). Each ratio scores 10 inside its ideal range and less the further outside it falls. Key ratios (FWHR, thirds, eye spacing and tilt, jaw width, chin projection) count up to 5× more than minor ones, ratios a photo can’t measure reliably (many profile angles) count less, weak points count extra, and the pillar is placed on the population scale (5 = average). Front counts 70%, side 30%.`,
   angularity: 'Angularity estimates how sharp and defined your bone structure looks, using the landmark geometry behind cheekbone prominence, jaw definition, cheek leanness, chin definition and the area under the jaw. Each assessment combines several measurements.',
-  dimorphism: 'Dimorphism measures how strongly your face shows male‑typical traits: a wide jaw, low brows and brow ridge, wide face shape, narrow eyes, a strong chin and neck. Each of the 10 assessments combines the related measurements.',
-  features: 'Features rates each facial feature on its own — eyes, brows, nose, lips, jaw, chin, cheeks, forehead, ears & neck, and symmetry — from all the measurements that describe it. Skin isn’t rated because it can’t be measured from landmarks.',
+  dimorphism: 'Dimorphism measures how strongly your face shows male‑typical traits: a wide jaw, low, dark, full brows over a brow ridge, wide face shape, narrow eyes with lids close to the iris, a strong chin and neck. Each of the 10 assessments combines the related measurements — landmark geometry plus what the photo shows of your brows and eyes.',
+  features: 'Features rates each facial feature on its own — eyes, brows, nose, lips, jaw, chin, cheeks, forehead, hairline, ears & neck, and symmetry — from all the measurements that describe it, including what the photo shows: brow thickness, darkness and length, how open the eyes are, lip fullness and the hairline. Skin isn’t rated.',
 };
 
 export function mountAnalysis(page, app, scan, res, pid) {
@@ -124,9 +124,10 @@ export function mountAnalysis(page, app, scan, res, pid) {
     active = { key: kind + id, m };
     $$('.mrow', v).forEach((r) => r.classList.toggle('active', r.dataset.id === id && r.dataset.kind === kind));
     $('#pfMetric', v).textContent = name;
-    $('#pfScore', v).textContent = sc.toFixed(1);
-    $('#pfScore', v).style.color = scoreColor(sc);
-    $('#pfRate', v).textContent = rating(sc);
+    const has = Number.isFinite(sc) && (kind === 'a' || Number.isFinite(res.values[id].v));
+    $('#pfScore', v).textContent = has ? sc.toFixed(1) : '—';
+    $('#pfScore', v).style.color = has ? scoreColor(sc) : 'var(--faint)';
+    $('#pfRate', v).textContent = has ? rating(sc) : 'Not measured';
     showView(m.view);
     focusOn(m);
   }
@@ -175,14 +176,16 @@ export function mountAnalysis(page, app, scan, res, pid) {
   // ── list ──
   function rows() {
     if (isH) {
-      return METRICS.filter((m) => m.hm && m.view === hView).map((m) => ({ kind: 'm', id: m.id, name: m.name, score: res.values[m.id].s, m }));
+      // a ratio that couldn't be measured (e.g. hair over the forehead) has no score
+      return METRICS.filter((m) => m.hm && m.view === hView).map((m) => ({ kind: 'm', id: m.id, name: m.name, score: Number.isFinite(res.values[m.id].v) ? res.values[m.id].s : NaN, m }));
     }
     return res.pillars[pid].items.map((a) => ({ kind: 'a', id: a.id, name: a.name, score: a.score, a }));
   }
   function renderList() {
     let list = rows();
-    if (sort === 'low') list.sort((a, b) => a.score - b.score);
-    else if (sort === 'high') list.sort((a, b) => b.score - a.score);
+    const key = (r, d) => (Number.isFinite(r.score) ? r.score : d); // unmeasured items go last
+    if (sort === 'low') list.sort((a, b) => key(a, 99) - key(b, 99));
+    else if (sort === 'high') list.sort((a, b) => key(b, -1) - key(a, -1));
     else list.sort((a, b) => a.name.localeCompare(b.name));
     $('#mCount', v).textContent = `${list.length} ${isH ? 'ratios' : 'assessments'}`;
     $('#mList', v).innerHTML = list.map((r, i) => (r.kind === 'm' ? metricRow(r.m, res, i) : assessRow(r.a, res, i))).join('');
@@ -304,6 +307,20 @@ const vchip = (txt, s) => `<span class="vchip" style="--c:${ratioColor(s)}">${tx
 
 export function metricRow(m, res, i) {
   const r = res.values[m.id];
+  if (!Number.isFinite(r.v)) {
+    return `<div class="mrow na" data-id="${m.id}" data-kind="m" style="animation-delay:${Math.min(i, 14) * 25}ms">
+    <div class="mrow-main">
+      <div class="mr-left"><div class="mr-name">${esc(m.name)} <span class="chip tiny ghost">not measured</span></div></div>
+      <div class="mr-score muted">—</div>
+      <span class="chev">${icon('chevR', 16)}</span>
+    </div>
+    <div class="mrow-detail">
+      <p>${esc(m.desc)}</p>
+      <p class="fine">Not measured on this photo — a point it needs is hidden (for example hair over the forehead) or couldn’t be read. It is left out of your scores rather than guessed.</p>
+      <div class="formula">${icon('info', 13)} ${esc(m.how)}</div>
+    </div>
+  </div>`;
+  }
   return `<div class="mrow" data-id="${m.id}" data-kind="m" style="animation-delay:${Math.min(i, 14) * 25}ms">
     <div class="mrow-main">
       <div class="mr-left">
@@ -323,7 +340,17 @@ export function metricRow(m, res, i) {
 
 function assessRow(a, res, i) {
   const det = assessmentDetail(a, res);
-  const lead = det[0];
+  const lead = det.find((d) => Number.isFinite(d.v)) || det[0];
+  if (!Number.isFinite(a.score)) {
+    return `<div class="mrow na" data-id="${a.id}" data-kind="a" style="animation-delay:${Math.min(i, 14) * 25}ms">
+    <div class="mrow-main">
+      <div class="mr-left"><div class="mr-name">${esc(a.name)} <span class="chip tiny ghost">not measured</span></div></div>
+      <div class="mr-score muted">—</div>
+      <span class="chev">${icon('chevR', 16)}</span>
+    </div>
+    <div class="mrow-detail"><p>${esc(a.desc)}</p><p class="fine">None of its measurements could be read from these photos, so it is left out.</p></div>
+  </div>`;
+  }
   return `<div class="mrow" data-id="${a.id}" data-kind="a" style="animation-delay:${Math.min(i, 14) * 25}ms">
     <div class="mrow-main">
       <div class="mr-left">
@@ -337,8 +364,8 @@ function assessRow(a, res, i) {
       <p>${esc(a.desc)}</p>
       <div class="sub-list">${det.map((d) => `<div class="sub-row" data-m="${d.m.id}">
         <div class="sr-name">${esc(d.m.name)}<span class="sr-view">${d.m.view === 'front' ? 'Front' : 'Side'}${d.w > 1 ? ' · ×' + d.w : ''}</span></div>
-        <div class="sr-val">${fmt(d.m, d.v)}<span>ideal ${fmtRange(d.m, d)}</span></div>
-        <b style="color:${ratioColor(d.s)}">${d.s.toFixed(2)}</b></div>`).join('')}</div>
+        <div class="sr-val">${fmt(d.m, d.v)}<span>${Number.isFinite(d.v) ? 'ideal ' + fmtRange(d.m, d) : 'not measured'}</span></div>
+        <b style="color:${Number.isFinite(d.v) ? ratioColor(d.s) : 'var(--faint)'}">${Number.isFinite(d.v) ? d.s.toFixed(2) : '—'}</b></div>`).join('')}</div>
     </div>
   </div>`;
 }
@@ -349,7 +376,7 @@ export function scoringGuide() {
     <p class="m-body">Each ratio scores <b>10 inside its ideal range</b> and drops off smoothly outside it — the shaded band on each bar is the ideal range. How fast it drops is set per ratio, fitted to FaceIQ Labs’ published scores.</p>
     <p class="m-body">Pillars lean on your weaker ratios (a power mean), then sit on FaceIQ’s population scale: <b>5 is average, 7 ≈ top 6%, 8 ≈ top 0.4%</b>.</p>
     <div class="bands">${bands.map(([s, l]) => `<div><span class="sw" style="background:${scoreColor(s + 0.05)}"></span><b>${s === 0 ? '< 4' : s + '+'}</b><span>${l}</span></div>`).join('')}</div>
-    <p class="m-body">Harmony = 60% front + 40% side. Overall combines the four pillars like a geometric mean, so your weakest pillar pulls hardest.</p>
+    <p class="m-body">Harmony = 70% front + 30% side. Overall combines the four pillars like a geometric mean, so your weakest pillar pulls hardest.</p>
     <button class="btn dark block" data-x>Close</button>`, { cls: 'small' });
   m.el.querySelector('[data-x]').onclick = () => m.close();
 }

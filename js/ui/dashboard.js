@@ -2,7 +2,7 @@
 import { $, $$, el, esc, icon, bars, countUp, relTime, confirmDialog, toast } from './dom.js';
 import { Stage } from './stage.js';
 import { drawLinks, drawPoints, bbox } from './draw.js';
-import { PILLARS, METRIC_BY_ID, rating, scoreColor, ratioColor, fmt, POP } from '../metrics.js';
+import { PILLARS, METRICS, METRIC_BY_ID, rating, scoreColor, ratioColor, ratioLabel, fmt, fmtRange, POP, percentile, pctText } from '../metrics.js';
 import { mountAnalysis } from './analysis.js';
 import { mountPlan, mountSimulate, mountCompare, mountMethodology, exportCard } from './extras.js';
 import { openCalibration } from './calibration.js';
@@ -173,7 +173,7 @@ function mountOverview(page, app, scan, res) {
         <div class="ov-left">
           <div class="ov-score"><span class="num big" id="ovNum" style="color:${scoreColor(ov)}">0.00</span><span class="den">/10</span></div>
           <div class="ov-rate">${rating(ov)}</div>
-          <p class="ov-pct">Higher than <b>${res.percentile.toFixed(0)}%</b> of men</p>
+          <p class="ov-pct">Higher than <b>${pctText(res.percentile)}%</b> of men</p>
           <div class="ov-weights">${PILLARS.map((p) => `<div><span>${p.name}</span><b style="color:${scoreColor(P[p.id].score)}">${P[p.id].score.toFixed(2)}</b></div>`).join('')}</div>
         </div>
         <div class="ov-right">${bellCurve(ov, res.percentile)}</div>
@@ -181,6 +181,8 @@ function mountOverview(page, app, scan, res) {
       <div class="ov-tabs seg dark" id="ovTabs">${PILLARS.map((p, i) => `<button data-p="${p.id}" class="${i === 0 ? 'on' : ''}">${p.name}</button>`).join('')}</div>
       <div class="ov-pillar" id="ovPillar"></div>
     </section>
+    <section class="views-row">${['front', 'side'].map((view, i) => viewCard(res, view, i)).join('')}</section>
+    ${lookCard(res, scan)}
     <section class="card quality fade-up" style="animation-delay:360ms">
       <h3>${icon('camera', 17)} Photo & pose check</h3>
       <ul>${res.quality.map((q) => `<li class="${q.level}"><span class="qdot"></span><span class="qv">${q.view === 'front' ? 'Front' : 'Profile'}</span>${esc(q.text)}</li>`).join('')}</ul>
@@ -188,7 +190,7 @@ function mountOverview(page, app, scan, res) {
     </section>
   </div>`);
   page.appendChild(v);
-  $$('.pc-score .num', v).forEach((n, i) => countUp(n, +n.dataset.n, { delay: 150 + i * 80 }));
+  $$('.pc-score .num, .vc-score .num', v).forEach((n, i) => countUp(n, +n.dataset.n, { delay: 150 + i * 80 }));
   countUp($('#ovNum', v), ov, { delay: 350, ms: 1400 });
   requestAnimationFrame(() => $('.bell', v)?.classList.add('go'));
 
@@ -199,9 +201,9 @@ function mountOverview(page, app, scan, res) {
     const box = $('#ovPillar', v);
     const p = PILLARS.find((x) => x.id === pid);
     const sc = res.pillars[pid].score;
-    const list = pid === 'harmony'
-      ? res.pillars.harmony.items.map((id) => ({ name: METRIC_BY_ID[id].name, score: res.values[id].s, val: fmt(METRIC_BY_ID[id], res.values[id].v) }))
-      : res.pillars[pid].items.map((a) => ({ name: a.name, score: a.score, val: '' }));
+    const list = (pid === 'harmony'
+      ? res.pillars.harmony.items.filter((id) => Number.isFinite(res.values[id].v)).map((id) => ({ name: METRIC_BY_ID[id].name, score: res.values[id].s, val: fmt(METRIC_BY_ID[id], res.values[id].v) }))
+      : res.pillars[pid].items.map((a) => ({ name: a.name, score: a.score, val: '' }))).filter((r) => Number.isFinite(r.score));
     const sorted = [...list].sort((a, b) => b.score - a.score);
     const best = sorted.slice(0, 3), worst = sorted.slice(-3).reverse();
     box.innerHTML = `
@@ -240,7 +242,79 @@ function mountOverview(page, app, scan, res) {
     renderPillar();
   }));
   renderPillar();
-  return () => stages.forEach((s) => s.destroy());
+  // photos in the front / side profile cards
+  const viewStages = [];
+  let alive = true;
+  (async () => {
+    for (const view of ['front', 'side']) {
+      const host = $(`[data-vv="${view}"]`, v);
+      if (!host) continue;
+      const img = await app.img(scan[view].url);
+      if (!alive) return;
+      const lm = scan[view].lm;
+      const st = new Stage(host, img, {
+        bg: '#0f1316',
+        onDraw: (ctx, sv) => { drawLinks(ctx, sv, lm, view, { color: 'rgba(255,255,255,0.35)' }); drawPoints(ctx, sv, lm, { r: 1.6 }); },
+      });
+      const fit = () => { const b = bbox(lm, 0.14); st.setView(st.rectView(b.x0, b.y0, b.x1, b.y1, 0)); };
+      st.onResize = fit; fit();
+      viewStages.push(st);
+    }
+  })();
+  return () => { alive = false; stages.forEach((s) => s.destroy()); viewStages.forEach((s) => s.destroy()); };
+}
+
+// Front profile / side profile: the four pillars from one photo's measurements alone, on the same scale
+function viewCard(res, view, i) {
+  const V = res.views?.[view];
+  if (!V || !Number.isFinite(V.score)) return '';
+  const name = view === 'front' ? 'Front profile' : 'Side profile';
+  const rows = [['harmony', 'Harmony'], ['angularity', 'Angularity'], ['dimorphism', 'Dimorphism'], ['features', 'Features']]
+    .filter(([k]) => Number.isFinite(V[k]))
+    .map(([k, n]) => `<div class="vc-row"><span>${n}</span><div class="meter"><i style="width:${V[k] * 10}%;background:${scoreColor(V[k])}"></i></div><b style="color:${scoreColor(V[k])}">${V[k].toFixed(1)}</b></div>`).join('');
+  // what lifts and what drags this view most: importance x distance from ideal
+  const items = METRICS.filter((m) => m.view === view && (m.hm || m.look) && Number.isFinite(res.values[m.id]?.v))
+    .map((m) => ({ m, s: res.values[m.id].s, w: m.w }));
+  const worst = [...items].filter((x) => x.s < 8).sort((a, b) => (10 - b.s) * b.w - (10 - a.s) * a.w).slice(0, 3);
+  const best = [...items].filter((x) => x.s >= 9).sort((a, b) => b.w - a.w).slice(0, 3);
+  const li = (x) => `<li><span>${esc(x.m.name)}</span><b style="color:${ratioColor(x.s)}">${fmt(x.m, res.values[x.m.id].v)}</b></li>`;
+  const pct = percentile(V.score);
+  return `<div class="card view-card fade-up" style="animation-delay:${320 + i * 60}ms">
+    <div class="vc-photo"><div class="stage-host" data-vv="${view}"></div></div>
+    <div class="vc-body">
+      <div class="vc-head"><span class="cap">${name}</span><span class="muted">${view === 'front' ? 'front photo only' : 'side photo only'}</span></div>
+      <div class="vc-score"><span class="num" data-n="${V.score}" style="color:${scoreColor(V.score)}">0.00</span><span class="den">/10</span></div>
+      <div class="vc-rate">${rating(V.score)} · higher than ${pctText(pct)}% of men</div>
+      <div class="vc-rows">${rows}</div>
+      <div class="vc-lists">
+        ${best.length ? `<div><div class="cap good-t">Strongest</div><ul>${best.map(li).join('')}</ul></div>` : ''}
+        ${worst.length ? `<div><div class="cap bad-t">Holding it back</div><ul>${worst.map(li).join('')}</ul></div>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+// Measurements read from the photo itself (brows, eye openness, lips, hairline)
+function lookCard(res, scan) {
+  const ms = METRICS.filter((m) => m.look);
+  const have = ms.filter((m) => Number.isFinite(res.values[m.id]?.v));
+  if (!have.length) {
+    return `<section class="card looks fade-up"><div class="lk-head"><h3>${icon('eye', 17)} From the photo</h3></div>
+      <p class="fine">${scan.look ? 'These couldn’t be read from this photo (face too small, or brows and eyes hidden).' : 'Reading brows, eye openness, lips and hairline from your photo…'}</p></section>`;
+  }
+  const row = (m) => {
+    const r = res.values[m.id];
+    const ok = Number.isFinite(r.v);
+    return `<div class="lk-row" title="${esc(m.desc)}">
+      <div class="lk-name">${esc(m.name)}<span>${esc(m.desc.split('. ')[0])}.</span></div>
+      <div class="lk-val">${ok ? `<b>${fmt(m, r.v)}</b><span class="muted">ideal ${fmtRange(m, r)}</span>` : '<span class="muted">not visible</span>'}</div>
+      <div class="lk-score">${ok ? `<i style="background:${ratioColor(r.s)}"></i>${ratioLabel(r.s)}` : ''}</div>
+    </div>`;
+  };
+  return `<section class="card looks fade-up" style="animation-delay:340ms">
+    <div class="lk-head"><h3>${icon('eye', 17)} From the photo</h3><span class="muted">Read from the pixels around your landmarks, not from angles. They feed Features and Dimorphism.</span></div>
+    <div class="lk-list">${ms.map(row).join('')}</div>
+  </section>`;
 }
 
 // Bell curve with the user's position
@@ -263,7 +337,7 @@ export function bellCurve(score, pct) {
     <g class="marker" style="--x:${X(score)}px">
       <line x1="${X(score)}" x2="${X(score)}" y1="${Y(score) - 18}" y2="${H - 30}"/>
       <circle cx="${X(score)}" cy="${Y(score)}" r="6"/>
-      <g transform="translate(${Math.min(W - 70, Math.max(70, X(score)))},${Math.max(18, Y(score) - 34)})"><rect x="-58" y="-15" width="116" height="28" rx="14"/><text text-anchor="middle" y="4">You · top ${Math.max(1, 100 - pct).toFixed(0)}%</text></g>
+      <g transform="translate(${Math.min(W - 70, Math.max(70, X(score)))},${Math.max(18, Y(score) - 34)})"><rect x="-58" y="-15" width="116" height="28" rx="14"/><text text-anchor="middle" y="4">You · top ${100 - pct < 1 ? Math.max(0.1, 100 - pct).toFixed(1) : (100 - pct).toFixed(0)}%</text></g>
     </g>
     ${ticks}
   </svg>`;
@@ -275,10 +349,10 @@ function mountEmpty(page, app) {
     <div class="empty-card card">
       <div class="empty-art">${PILLAR_ART.features}</div>
       <h1 class="serif">Get your facial analysis.</h1>
-      <p class="sub">Upload a front and a side photo. AI places ${49 + 21} landmarks, you verify them, and GGFacelon measures 70 facial ratios across Harmony, Angularity, Dimorphism and Features — every result unlocked.</p>
+      <p class="sub">Upload a front and a side photo. AI places ${49 + 24} landmarks, you verify them, and GGFacelon measures ${METRICS.filter((m) => !m.look).length} facial ratios plus ${METRICS.filter((m) => m.look).length} things read from the photo itself — brows, eye openness, lips, hairline — across Harmony, Angularity, Dimorphism and Features, for your front and side profile. Every result unlocked.</p>
       <div class="empty-acts"><a class="btn dark" href="#/new">${icon('scan', 16)} Start a new scan</a><button class="btn ghost" id="sample">${icon('sparkle', 16)} Try the sample face</button></div>
       <ul class="empty-feats">
-        <li>${icon('target', 16)}<span><b>70 measurements</b> — thirds, FWHR, canthal tilt, gonial angle, E‑line and more</span></li>
+        <li>${icon('target', 16)}<span><b>${METRICS.length} measurements</b> — thirds, FWHR, canthal tilt, gonial angle, E‑line, brow thickness and more</span></li>
         <li>${icon('shield', 16)}<span><b>Private</b> — everything runs in your browser</span></li>
         <li>${icon('wand', 16)}<span><b>Plan & Simulate</b> — see what moves your score</span></li>
       </ul>

@@ -96,6 +96,10 @@ async function runSeg(img) {
   }
 }
 
+// Segmentation for other modules (photo appearance): { at(x, y) → category } or null
+export const segmentPhoto = (img) => runSeg(img);
+export const SEG_CLASS = { BG: C_BG, HAIR: C_HAIR, BODY: C_BODY, FACE: C_FACE, CLOTHES: C_CLOTHES, OTHER: C_OTHER };
+
 // Run the mesh. Returns array of {x,y} in image pixels, or null.
 async function runMesh(img) {
   const det = await withTimeout(loadDetector(), 90000, 'face model');
@@ -280,6 +284,22 @@ function frontFromMesh(m, px, seg) {
     const zyY = pupilY + 0.22 * (cupidY - pupilY);
     const cR = [127, 234, 93, 132].map((i) => pick(m, i)), cL = [356, 454, 323, 361].map((i) => pick(m, i));
     lm.zy_r = atY(cR, zyY); lm.zy_l = atY(cL, zyY);
+  }
+  // Long hair over the sides of the face: the mesh guesses the head outline under the hair, which can put the
+  // cheekbone (and mouth-level jaw) points deep in the hair — a face far wider than it looks. Move such points
+  // in to the visible face edge. Only for deep cover (≥ 5% of the eye spacing): on FaceIQ's benchmark,
+  // smaller moves (sideburns, the hair boundary) made agreement slightly worse, larger ones clearly better.
+  if (seg) {
+    const ipd = dist(lm.pupil_r, lm.pupil_l);
+    for (const k of ['zy_r', 'zy_l', 'cheek_r', 'cheek_l']) {
+      const p = lm[k], inward = Math.sign(cx - p.x) || 1;
+      if (seg.at(p.x, p.y) !== C_HAIR) continue;
+      for (let t = 1; t <= ipd * 0.3; t += 1) {
+        const c = seg.at(p.x + inward * t, p.y);
+        if (isSkinClass(c)) { if (t - 1 >= ipd * 0.05) lm[k] = { x: p.x + inward * (t - 1), y: p.y }; break; }
+        if (c !== C_HAIR) break;
+      }
+    }
   }
   const faceH = dist(pick(m, 10), lm.me);
   const cheekSkin = avgSkin(px, [lerp(lm.zy_r, lm.prn, 0.45), lerp(lm.zy_l, lm.prn, 0.45)]);

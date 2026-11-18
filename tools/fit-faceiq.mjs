@@ -105,11 +105,20 @@ ${lines.join('\n')}
 // Harmony: shown = A + B × weighted power mean (exponent p) of the ratio scores, per view; 60% front, 40% side.
 // view / pillar: maps fitted on the FaceIQ benchmark (tools/calibration.json, from tools/bench.js), which also
 // absorb the small differences between automatically placed landmarks and FaceIQ's.
-export const AGG = { p: ${P_MEAN}, A: ${A.toFixed(4)}, B: ${B.toFixed(4)}, front: 0.6, side: 0.4,
+// byView: maps for the front-only and side-only scores. shift: convention offsets subtracted before scoring.
+// rel: reliability of each automatic measurement (multiplies its weight). look: ideal ranges of the photo
+// measurements (js/appearance.js), lookK their weight. setBias: each range set's average Harmony offset.
+// All from tools/fit-looks.mjs on the FaceIQ benchmark.
+export const AGG = { p: ${P_MEAN}, A: ${A.toFixed(4)}, B: ${B.toFixed(4)}, front: ${CAL.mix?.front ?? 0.6}, side: ${CAL.mix?.side ?? 0.4},
   view: ${JSON.stringify(CAL.view || null)}, pillar: ${JSON.stringify(CAL.pillar || null)}, overall: ${JSON.stringify(CAL.overall || null)},
+  byView: ${JSON.stringify(CAL.byView || null)},
+  shift: ${JSON.stringify(CAL.shift || {})},
+  rel: ${JSON.stringify(CAL.rel || {})},
+  look: ${JSON.stringify(CAL.look || {})}, lookK: ${CAL.lookK ?? 1},
+  setBias: ${JSON.stringify(CAL.setBias || {})},
   w: ${JSON.stringify(Object.fromEntries([...FRONT, ...SIDE].map((id) => [id, wt(id)])))} };
 // FaceIQ adjusts ideal ranges for ethnicity. GGFacelon doesn't ask, so each face is scored against every set
-// and the best-fitting one is used. [lo, hi] per ratio; ratios missing from a set use FIQ_NORMS.
+// and the one it fits best (after AGG.setBias) is used. [lo, hi] per ratio; ratios missing from a set use FIQ_NORMS.
 export const RANGE_SETS = ${JSON.stringify(RANGE_SETS)};
 `);
   console.log('wrote js/norms.js');
