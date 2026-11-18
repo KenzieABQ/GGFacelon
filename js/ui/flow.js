@@ -1,7 +1,7 @@
 // New-scan flow: consent → profile → front photo → side photo → AI detection → verify → review → analyse.
 import { $, el, esc, icon, modal, toast } from './dom.js';
 import { normalizeFile, normalizeSource, loadImage } from '../img.js';
-import { detect, loadDetector, loadSegmenter } from '../detect.js';
+import { detect, loadDetector, loadSegmenter, refitTemplate } from '../detect.js';
 import { mountVerify } from './verify.js';
 import { mountReview } from './review.js';
 import { mountAnalyzing } from './analyzing.js';
@@ -257,7 +257,20 @@ export function mountFlow(root, app, opts) {
   const pack = (d) => ({ url: d.url, w: d.w, h: d.h, lm: d.lm, ai: d.ai, source: d.source, dir: d.dir });
 
   // start
-  if (opts.mode === 'edit') step(stepReview);
+  if (opts.mode === 'edit') {
+    // older scans lack points added since (e.g. supratip, infratip, profile eye corner): place them from the
+    // reference template fitted to the existing points
+    for (const view of ['front', 'side']) {
+      const d = draft[view];
+      const missing = DEFS[view].some((def) => !d.lm[def.id]);
+      if (missing) {
+        const confirmed = Object.fromEntries(Object.keys(d.lm).map((k) => [k, true]));
+        d.lm = { ...refitTemplate(view, d.lm, confirmed), ...d.lm };
+        d.ai = { ...d.lm, ...d.ai };
+      }
+    }
+    step(stepReview);
+  }
   else if (app.sample) {
     app.sample = false;
     Promise.all(['front', 'side'].map(async (view) => {

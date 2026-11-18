@@ -106,7 +106,7 @@ ${lines.join('\n')}
 // view / pillar: maps fitted on the FaceIQ benchmark (tools/calibration.json, from tools/bench.js), which also
 // absorb the small differences between automatically placed landmarks and FaceIQ's.
 export const AGG = { p: ${P_MEAN}, A: ${A.toFixed(4)}, B: ${B.toFixed(4)}, front: 0.6, side: 0.4,
-  view: ${JSON.stringify(CAL.view || null)}, pillar: ${JSON.stringify(CAL.pillar || null)},
+  view: ${JSON.stringify(CAL.view || null)}, pillar: ${JSON.stringify(CAL.pillar || null)}, overall: ${JSON.stringify(CAL.overall || null)},
   w: ${JSON.stringify(Object.fromEntries([...FRONT, ...SIDE].map((id) => [id, wt(id)])))} };
 // FaceIQ adjusts ideal ranges for ethnicity. GGFacelon doesn't ask, so each face is scored against every set
 // and the best-fitting one is used. [lo, hi] per ratio; ratios missing from a set use FIQ_NORMS.

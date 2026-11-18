@@ -651,12 +651,26 @@ export function scoreValues(raw, opts = {}) {
     rawP[p.id] = powerMean(items.map((a) => ({ s: a.score, w: a.w })), AGG.p);
     pillars[p.id] = { score: show(rawP[p.id], PILLAR_MAP[p.id] || [AGG.A, AGG.B]), raw: rawP[p.id], items };
   }
-  const overall = powerMean(Object.entries(PILLAR_WEIGHTS).map(([k, w]) => ({ s: pillars[k].score, w })), 0);
+  // Geometric mean of the pillars (FaceIQ), then stretched so the benchmark keeps FaceIQ's spread of scores
+  const gm = powerMean(Object.entries(PILLAR_WEIGHTS).map(([k, w]) => ({ s: pillars[k].score, w })), 0);
+  const overall = AGG.overall ? show(gm, AGG.overall) : gm;
   return { values, pillars, overall, rawOverall: overall, percentile: percentile(overall), rangeSet };
 }
 
 // ───────────────────────── run analysis ─────────────────────────
+// Scans saved before supratip, infratip and the profile eye corner existed: estimate them from the rest
+function withDerivedSide(side) {
+  if (side.st && side.it && side.exs) return side;
+  const s = { ...side, _derived: true }, f = Math.sign(s.prn.x - s.tragus.x) || 1, H = Math.abs(s.me.y - s.n.y) || 1;
+  const noseL = dist(s.n, s.prn), toward = (a, b, d) => { const l = dist(a, b) || 1; return lerp(a, b, d / l); };
+  if (!s.st) s.st = toward(s.prn, s.n, noseL * 0.12);
+  if (!s.it) s.it = toward(s.prn, s.sn, noseL * 0.1);
+  if (!s.exs) s.exs = { x: s.cornea.x - f * H * 0.1, y: s.cornea.y };
+  return s;
+}
+
 export function measure(front, side) {
+  side = withDerivedSide(side);
   const ff = frontFrame(front), sf = sideFrame(side);
   const fc = frontCtx(ff.N);
   // Side millimetres: carry the front photo's 190 mm hairline-to-chin scale over via nasion → menton
@@ -670,6 +684,8 @@ export function measure(front, side) {
     try { v = m.f(N, c); } catch { v = NaN; }
     raw[m.id] = v;
   }
+  // an estimated supratip/infratip can't give a meaningful tip angle — leave it out for older scans
+  if (side._derived) raw.nasal_tip_angle = NaN;
   return { raw, ff, fc, sf, sc };
 }
 

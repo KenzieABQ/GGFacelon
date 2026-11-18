@@ -252,11 +252,11 @@ function focusAmt(f) {
 // A pre-blurred, downscaled copy of the photo (blurring every frame would be too slow)
 function makeBlur(img) {
   const W = img.naturalWidth, H = img.naturalHeight;
-  const k = Math.min(1, 900 / Math.max(W, H));
+  const k = Math.min(1, 1600 / Math.max(W, H));
   const c = document.createElement('canvas');
   c.width = Math.round(W * k); c.height = Math.round(H * k);
   const x = c.getContext('2d');
-  x.filter = 'blur(4px)';
+  x.filter = 'blur(1.2px)'; // subtle: the copy is magnified with the zoom
   x.drawImage(img, 0, 0, c.width, c.height);
   return { canvas: c, k };
 }
@@ -274,11 +274,11 @@ function drawFocusBlur(ctx, s) {
   o.setTransform((dpr * v.s) / k, 0, 0, (dpr * v.s) / k, dpr * (s.w / 2 - v.cx * v.s), dpr * (s.h / 2 - v.cy * v.s));
   o.drawImage(s.blur.canvas, 0, 0);
   o.setTransform(dpr, 0, 0, dpr, 0, 0);
-  o.fillStyle = 'rgba(6,10,12,0.14)';
+  o.fillStyle = 'rgba(6,10,12,0.06)';
   o.fillRect(0, 0, s.w, s.h);
   o.globalCompositeOperation = 'destination-out';
   const c = s.toScreen({ x: (f.box.x0 + f.box.x1) / 2, y: (f.box.y0 + f.box.y1) / 2 });
-  const rx = Math.max(20, ((f.box.x1 - f.box.x0) / 2) * v.s), ry = Math.max(20, ((f.box.y1 - f.box.y0) / 2) * v.s);
+  const rx = Math.max(28, ((f.box.x1 - f.box.x0) / 2) * v.s * 1.35), ry = Math.max(28, ((f.box.y1 - f.box.y0) / 2) * v.s * 1.35);
   o.save();
   o.translate(c.x, c.y);
   o.scale(rx, ry);
@@ -289,7 +289,7 @@ function drawFocusBlur(ctx, s) {
   o.restore();
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.globalAlpha = amt;
+  ctx.globalAlpha = amt * 0.55;
   ctx.drawImage(off, 0, 0);
   ctx.restore();
 }
