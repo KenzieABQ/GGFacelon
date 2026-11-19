@@ -1,5 +1,5 @@
 // Reference data collected from FaceIQ Labs' public pages (November 2026), used by tools/fit-faceiq.mjs
-// to derive the scoring parameters in js/norms.js.
+// to derive the scoring parameters in src/lib/engine/norms.js.
 //
 // Sources
 //  • Ideal ranges, values, scores and population stats: faceiqlabs.com/celebs-wiki/custom-chico-lachowski/harmony/<ratio>

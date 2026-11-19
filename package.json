@@ -1,0 +1,20 @@
+{
+  "name": "ggfacelon",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Landmark-based facial analysis modelled on FaceIQ Labs \u2014 runs entirely in the browser.",
+  "scripts": {
+    "dev": "next dev -p 5180",
+    "build": "next build",
+    "start": "npx serve out -l 5180",
+    "lint": "next lint",
+    "postinstall": "node tools/copy-wasm.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.14",
+    "framer-motion": "11.18.2",
+    "next": "15.5.29",
+    "react": "19.1.1",
+    "react-dom": "19.1.1"
+  }
+}

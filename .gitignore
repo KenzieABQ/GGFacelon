@@ -1,2 +1,8 @@
 .DS_Store
 tools/testdata/
+node_modules/
+.next/
+out/
+public/mediapipe/
+public/testdata
+.next-build/

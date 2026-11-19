@@ -4,20 +4,32 @@ Landmark‑based facial analysis for men, modelled on FaceIQ Labs' published met
 
 ## Run
 
+Built with **Next.js 15** (App Router, React 19, framer-motion), exported as a static site — all analysis runs
+in the browser, so it can be hosted anywhere static (Vercel, GitHub Pages, any file server).
+
 ```bash
-python3 serve.py
+npm install          # also copies MediaPipe's WASM runtime into public/mediapipe/
+npm run dev          # http://localhost:5180
 ```
 
-Open http://localhost:5180. (`serve.py` is a plain static server that turns off browser caching, so updates always load.) It has to be served over http (ES modules + camera); opening `index.html` as a file won't work.
-The AI models (MediaPipe Face Landmarker ~4 MB, selfie segmenter ~16 MB) load from a CDN the first time. Offline, points start from a template instead.
+```bash
+npm run build        # static export → out/
+npm start            # serve out/ on :5180
+```
+
+Set `NEXT_PUBLIC_BASE_PATH=/repo-name` when building for a sub-path (e.g. GitHub Pages).
+The two AI models (MediaPipe Face Landmarker ~4 MB, selfie segmenter ~16 MB) are fetched from Google's model
+storage the first time; the MediaPipe library and its WASM are served by the app itself. Offline, points start
+from a template instead. Scans saved in the old static version (same origin) open unchanged.
 
 ## Flow
 
 1. Consent → profile (male) → front photo → side photo (upload or camera, with photo instructions)
 2. **Detection**: sideways or upside‑down photos are turned upright and tilted ones levelled (eyes level on the front, Frankfort plane on the profile). MediaPipe 478‑point face mesh for the front; for the profile, the traced silhouette (peaks and dips give nose tip, nose base, lips, lip–chin fold, chin, chin bottom, neck point) or, for three‑quarter photos, the mesh midline. Works facing left or right (a "flip" button re‑detects if it guessed wrong)
 3. **Verify**: one point at a time, zoomed, with reference photo / diagram / how‑to (arrow keys nudge, Enter next, Backspace back, R reset, 1‑3 zoom)
-4. **Review** all points (drag with magnifier) → **Analyze**
-5. Dashboard: Overview (overall, front‑profile and side‑profile scores, photo measurements), Analysis (per pillar; hovering a measurement zooms into it), Plan, Simulate, Compare, Methodology, Calibration & data, PNG report export
+   (or **Skip review** to analyse straight away with the AI points)
+4. **Review** all points — hovering a point shows where it belongs on the reference photo; drag with a magnifier → **Analyze**
+5. Dashboard: Overview (overall, front‑profile and side‑profile scores, photo measurements), Analysis (per pillar; hovering a measurement zooms into it, clicking opens its full breakdown), Plan, Simulate, Compare (side‑by‑side photos with the measurement drawn on both), Methodology, Calibration & data, dark share card
 
 ## Scoring
 
@@ -26,10 +38,10 @@ Follows FaceIQ Labs — see [docs/scoring.md](docs/scoring.md) for sources and d
 - 66 ratios with FaceIQ's formulas and male ideal ranges; each scores 10 inside its range and `10·exp(−(d/s)²)` outside, with `s` fitted to FaceIQ's published scores.
 - FaceIQ adjusts ranges for ethnicity; GGFacelon scores against all six of its range sets and uses the one the face fits unusually well (each set's benchmark average subtracted first), with no ethnicity question.
 - Per‑ratio convention offsets and reliability weights, fitted on 119 FaceIQ‑analysed men (including 55 rated 7+): ratios FaceIQ measures from slightly different points are shifted onto FaceIQ's convention, and ratios that can't be measured reliably from a photo (many profile angles) count less.
-- Photo measurements (`js/appearance.js`) have their own ideal ranges and feed Features and Dimorphism.
+- Photo measurements (`src/lib/engine/appearance.js`) have their own ideal ranges and feed Features and Dimorphism.
 - Harmony = weighted power mean (p = 0.5) per view, 70% front + 30% side (FaceIQ: 60/40; profile angles are measured less reliably); Overall = geometric mean of the four pillars; Front/Side profile = the same from one photo's measurements; scale = FaceIQ's (5 average, 7 ≈ top 6%, 8 ≈ top 0.4%).
 - Against FaceIQ on the benchmark (automatic landmarks): overall correlation ≈ 0.8, mean difference ≈ 0.9 points; faces FaceIQ rates 8+ land about 0.5 lower on average.
-- Regenerate the fitted parameters (`js/norms.js`):
+- Regenerate the fitted parameters (`src/lib/engine/norms.js`):
 
 ```bash
 node tools/fit-faceiq.mjs --write     # ratio curves, weights, range sets
@@ -42,19 +54,21 @@ node tools/fit-looks.mjs --write      # offsets, reliabilities, photo-measuremen
 
 | File | Purpose |
 | --- | --- |
-| `js/landmarks.js` | 49 front + 24 profile landmark definitions, hand‑placed reference positions, link lines |
-| `js/detect.js` | Face mesh mapping, segmentation, 2‑D profile outline tracer, auto‑rotation/levelling, template fallback |
-| `js/metrics.js` | All measurements (FaceIQ formula, overlay), scoring, pillars, front/side profile scores, scale, pose checks |
-| `js/appearance.js` | Photo measurements: brows, eye openness, lips, hairline; profile points hidden by hair |
-| `js/norms.js` | Generated: ideal ranges (all range sets), score‑curve widths, Harmony weights and map |
-| `js/ui/*.js` | Screens: flow, detecting, verify, review, analyzing, dashboard, analysis, extras, calibration |
-| `tools/fit-faceiq.mjs`, `tools/faceiq-data.mjs` | Fit FaceIQ's score curves, weights and ranges → `js/norms.js` |
-| `tools/faceiq-bench.mjs`, `tools/bench.js` | Build a local benchmark from FaceIQ's public celebrity wiki and compare detection + scores against it |
+| `src/lib/engine/landmarks.js` | 49 front + 24 profile landmark definitions, hand‑placed reference positions, link lines |
+| `src/lib/engine/detect.js` | Face mesh mapping, segmentation, 2‑D profile outline tracer, auto‑rotation/levelling, template fallback |
+| `src/lib/engine/metrics.js` | All measurements (FaceIQ formula, overlay), scoring, pillars, front/side profile scores, scale, pose checks |
+| `src/lib/engine/appearance.js` | Photo measurements: brows, eye openness, lips, hairline; profile points hidden by hair |
+| `src/lib/engine/norms.js` | Generated: ideal ranges (all range sets), score‑curve widths, weights, offsets and score maps |
+| `src/lib/canvas/*` | Photo stage (zoom/pan camera), overlay drawing, draggable landmark editor, measurement photo panel |
+| `src/lib/app.js`, `src/lib/store.js` | App state (scans in IndexedDB, caches, calibration) with a React hook |
+| `src/components/*` | React screens: dashboard shell, overview, analysis, detail panels, compare, plan/simulate/methodology, scan flow |
+| `src/app/*` | Next.js routes: `/`, `/scan/?id=…&tab=…`, `/new/`, `/edit/?id=…`, `/methodology/`, `/bench/` (developer benchmark) |
+| `tools/fit-faceiq.mjs`, `tools/faceiq-data.mjs` | Fit FaceIQ's score curves, weights and ranges → `src/lib/engine/norms.js` |
+| `tools/faceiq-bench.mjs`, `src/lib/bench.js` | Build a local benchmark from FaceIQ's public celebrity wiki and compare detection + scores against it |
 | `tools/fit-looks.mjs`, `tools/sink.py` | Fit convention offsets, reliability weights, range‑set bias, photo‑measurement ranges and score maps on the benchmark → `tools/calibration.json` (`sink.py` receives the benchmark data from the browser) |
 | `tools/side-shape.mjs` | Median jaw‑angle / ear‑notch position for profiles |
-| `serve.py` | Local server with caching disabled |
 
-Ranges, curves, weights and the score maps live in `js/norms.js` (generated).
+Ranges, curves, weights and the score maps live in `src/lib/engine/norms.js` (generated).
 
 ## Consistency
 

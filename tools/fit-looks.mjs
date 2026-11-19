@@ -33,9 +33,9 @@ const faces = (() => {
 })();
 const WRITE = process.argv.includes('--write');
 
-const M = await import('../js/metrics.js');
+const M = await import('../src/lib/engine/metrics.js');
 const { METRICS, METRIC_BY_ID, scoreValues, RANGE_SET_IDS } = M;
-const { AGG } = await import('../js/norms.js');
+const { AGG } = await import('../src/lib/engine/norms.js');
 
 // ───────── stats helpers ─────────
 const fin = (a) => a.filter(Number.isFinite);

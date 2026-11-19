@@ -2,57 +2,57 @@
  "_note": "Written by tools/fit-looks.mjs from the FaceIQ benchmark (64 faces, tools/bench.js). view/pillar/overall/byView: spread-preserving maps (slope = FaceIQ SD / our SD) from raw values to FaceIQ's displayed scale. shift: per-ratio convention offsets. rel: s^2/(s^2+sigma^2) reliability of each automatic measurement. look: ideal ranges of the photo measurements. setBias: mean Harmony of each range set. mix: Harmony front/side shares.",
  "view": {
   "front": [
-   -3.6472,
-   1.3522
+   -3.932,
+   1.3889
   ],
   "side": [
-   -1.8084,
+   -1.8077,
    1.227
   ]
  },
  "pillar": {
   "angularity": [
-   -1.1832,
-   1.1747
+   -1.3504,
+   1.1833
   ],
   "dimorphism": [
-   0.3315,
-   0.8755
+   -0.0583,
+   0.9247
   ],
   "features": [
-   -8.0039,
-   1.8491
+   -8.4927,
+   1.9016
   ]
  },
  "overall": [
-  0.1311,
-  0.9696
+  0.1156,
+  0.9721
  ],
  "setBias": {
-  "caucasian": 0.0603,
-  "south_asian": 0.0955,
-  "black": -0.3321,
+  "caucasian": 0.0597,
+  "south_asian": 0.0953,
+  "black": -0.3369,
   "east_asian": 0.0687,
-  "middle_eastern": 0.0793,
-  "hispanic": 0.0283
+  "middle_eastern": 0.0794,
+  "hispanic": 0.0338
  },
  "byView": {
   "front": {
    "angularity": [
-    -2.3361,
-    1.2728
+    -2.5642,
+    1.2831
    ],
    "dimorphism": [
-    0.4827,
-    0.8401
+    0.0913,
+    0.8886
    ],
    "features": [
-    -8.519,
-    1.832
+    -9.1151,
+    1.8954
    ],
    "overall": [
-    0.3855,
-    0.9308
+    0.3804,
+    0.932
    ]
   },
   "side": {
@@ -61,15 +61,15 @@
     0.7696
    ],
    "dimorphism": [
-    2.1947,
+    2.1944,
     0.6937
    ],
    "features": [
-    -3.4534,
+    -3.4533,
     1.4077
    ],
    "overall": [
-    0.4227,
+    0.4228,
     0.9344
    ]
   }
@@ -148,12 +148,11 @@
   "bridge_nose": -0.3152,
   "nose_tip_pos": 0.8396,
   "chin_philtrum": 0.422,
-  "jaw_slope": 6.7006,
-  "bigonial": -3.3343,
+  "jaw_slope": 3.2877,
   "lower_third_prop": -1.3523,
+  "jfa": 3.8531,
   "ear_angle": 1.5753,
   "ear_ratio": -3.0412,
-  "neck_width": 3.147,
   "nasofrontal": 11.7991,
   "browridge_incl": -10.4223,
   "total_convexity": -5.6632,
@@ -188,7 +187,7 @@
   "brow_low_set": 0.824,
   "eye_ar": 0.651,
   "brow_tilt": 0.815,
-  "iaa_jfa_dev": 0.583,
+  "iaa_jfa_dev": 0.528,
   "iaa": 0.891,
   "bridge_nose": 0.302,
   "icd_nose": 0.621,
@@ -199,10 +198,10 @@
   "lip_ratio": 0.316,
   "ipd_mouth": 0.85,
   "chin_philtrum": 0.695,
-  "jaw_slope": 0.75,
-  "bigonial": 0.554,
+  "jaw_slope": 0.752,
+  "bigonial": 0.55,
   "lower_third_prop": 0.539,
-  "jfa": 0.805,
+  "jfa": 0.792,
   "ear_angle": 0.681,
   "ear_ratio": 0.642,
   "neck_width": 0.465,

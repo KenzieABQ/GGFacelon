@@ -29,7 +29,7 @@ The raw numbers used for fitting live in `tools/faceiq-data.mjs` (three publishe
 
 ## What GGFacelon replicates
 
-- **All 66 ratios** with FaceIQ's formulas (`js/metrics.js`), including its landmark conventions measured from
+- **All 66 ratios** with FaceIQ's formulas (`src/lib/engine/metrics.js`), including its landmark conventions measured from
   its own coordinates: cheekbone width at about lower‑eyelid level, "bigonial" width on the jaw contour at mouth
   level, the lower jaw angle a little down the jawline, temples a little over halfway from brows to hairline,
   the eye region measured to the end of the eyelid hood (~18% past the corner), the neck a third of the way
@@ -70,7 +70,7 @@ mostly 6.5–8.5, and the top end needs its own test (e.g. both Marlons and the 
 - **Hidden points.** When the segmenter shows hair over the profile's forehead points, the angles built on them
   are left out (and a pose‑check note says so). Hair over the cheekbones in the front photo moves the cheekbone
   points in to the visible face edge instead of the head outline the mesh guesses under the hair.
-- **Photo measurements** (`js/appearance.js`), read from the pixels around the verified landmarks:
+- **Photo measurements** (`src/lib/engine/appearance.js`), read from the pixels around the verified landmarks:
 
   | Measurement | How | Ideal |
   |---|---|---|
@@ -151,13 +151,13 @@ our measurement noise, a softer power mean, and fitted (unequal) pillar weights 
 ## Re‑deriving the numbers
 
 ```
-node tools/fit-faceiq.mjs --write     # ratio curves, weights, Harmony map, range sets → js/norms.js
+node tools/fit-faceiq.mjs --write     # ratio curves, weights, Harmony map, range sets → src/lib/engine/norms.js
 node tools/faceiq-bench.mjs 64        # (local) rebuild the benchmark from the public wiki
 node tools/faceiq-bench.mjs 120 --min 7 --nolm   # (local) add faces rated 7+ (scores only, no landmark pages)
 node tools/side-shape.mjs             # median jaw-angle / ear-notch position used for profiles
 node tools/fit-looks.mjs --write      # offsets, reliabilities, photo ranges, score maps (needs bench-raw.json)
 ```
 
-In the app (dev tools console): `const b = await import('/tools/bench.js'); const r = await b.run(); b.report(r)`
+In the dev server, open `/bench/` (it reads `tools/testdata/` through the `public/testdata` link) and press Run all; `report(r)`
 compares detection and scores with FaceIQ on the benchmark; `b.upload(r)` saves the raw per‑face data to
 `tools/testdata/bench-raw.json` (run `python3 tools/sink.py` first) for `tools/fit-looks.mjs`.

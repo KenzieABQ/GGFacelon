@@ -2,8 +2,8 @@
 // Used to place the jaw angle and ear notch from the traced outline points.
 //   node tools/side-shape.mjs
 import { readFileSync } from 'node:fs';
-import { REF } from '../js/landmarks.js';
-import { fitSimilarity } from '../js/geom.js';
+import { REF } from '../src/lib/engine/landmarks.js';
+import { fitSimilarity } from '../src/lib/engine/geom.js';
 const data = JSON.parse(readFileSync(new URL('./testdata/faceiq-bench.json', import.meta.url), 'utf8'));
 const ANCH = ['g', 'n', 'sn', 'pog', 'me'];
 const ref = Object.fromEntries(Object.entries(REF.side).map(([k, [x, y]]) => [k, { x, y }]));
