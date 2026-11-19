@@ -25,10 +25,10 @@ Follows FaceIQ Labs — see [docs/scoring.md](docs/scoring.md) for sources and d
 
 - 66 ratios with FaceIQ's formulas and male ideal ranges; each scores 10 inside its range and `10·exp(−(d/s)²)` outside, with `s` fitted to FaceIQ's published scores.
 - FaceIQ adjusts ranges for ethnicity; GGFacelon scores against all six of its range sets and uses the one the face fits unusually well (each set's benchmark average subtracted first), with no ethnicity question.
-- Per‑ratio convention offsets and reliability weights, fitted on 64 FaceIQ‑analysed celebrities: ratios FaceIQ measures from slightly different points are shifted onto FaceIQ's convention, and ratios that can't be measured reliably from a photo (many profile angles) count less.
+- Per‑ratio convention offsets and reliability weights, fitted on 119 FaceIQ‑analysed men (including 55 rated 7+): ratios FaceIQ measures from slightly different points are shifted onto FaceIQ's convention, and ratios that can't be measured reliably from a photo (many profile angles) count less.
 - Photo measurements (`js/appearance.js`) have their own ideal ranges and feed Features and Dimorphism.
 - Harmony = weighted power mean (p = 0.5) per view, 70% front + 30% side (FaceIQ: 60/40; profile angles are measured less reliably); Overall = geometric mean of the four pillars; Front/Side profile = the same from one photo's measurements; scale = FaceIQ's (5 average, 7 ≈ top 6%, 8 ≈ top 0.4%).
-- Against FaceIQ on the benchmark (automatic landmarks): overall correlation ≈ 0.7, mean difference ≈ 0.9 points.
+- Against FaceIQ on the benchmark (automatic landmarks): overall correlation ≈ 0.8, mean difference ≈ 0.9 points; faces FaceIQ rates 8+ land about 0.5 lower on average.
 - Regenerate the fitted parameters (`js/norms.js`):
 
 ```bash

@@ -13,7 +13,7 @@ what was measured from its public data, and where GGFacelon necessarily differs.
   score and population percentages, and embeds the landmark coordinates used to draw it.
 
 The raw numbers used for fitting live in `tools/faceiq-data.mjs` (three published faces) and, locally only,
-`tools/testdata/` (benchmark of 64 men and ideal ranges for each ethnicity — not committed).
+`tools/testdata/` (benchmark of 119 men and ideal ranges for each ethnicity — not committed).
 
 ## FaceIQ's method
 
@@ -48,17 +48,19 @@ The raw numbers used for fitting live in `tools/faceiq-data.mjs` (three publishe
 
 ## What GGFacelon adds or changes, and why
 
-Fitted with `tools/fit-looks.mjs` on 64 FaceIQ‑analysed celebrities (automatic landmarks, FaceIQ's own values
-and scores as the target).
+Fitted with `tools/fit-looks.mjs` on 119 FaceIQ‑analysed men (automatic landmarks, FaceIQ's own values and
+scores as the target): 64 spread evenly over the whole scale, plus 55 rated 7 or higher — the celebrity wiki is
+mostly 6.5–8.5, and the top end needs its own test (e.g. both Marlons and the Mathematically Perfect Male Face).
 
 - **Convention offsets.** Some ratios came out consistently offset from FaceIQ's value for the same face — e.g.
   FaceIQ's brow level sits ~0.02 IPD below the mean of the brow points, and it places the ear canal, nostril base
   and profile eye corner differently from us (it never publishes those coordinates). The median offset is
   subtracted when it is clearly larger than chance (> 3 standard errors and > ¼ of the ratio's score width).
 - **Reliability weights.** Each ratio's weight is multiplied by s² / (s² + σ²), where σ is how far our automatic
-  value scatters around FaceIQ's and s is the ratio's score width. Front ratios keep most of their weight
-  (σ/s ≈ 0.2–0.6); many profile angles and lip lines are measured with σ larger than s, so they drop to
-  10–40%. Their scores were mostly noise and could sink a good profile.
+  value scatters around FaceIQ's and s is the ratio's score width, capped by the correlation between our value
+  and FaceIQ's (a measurement that doesn't track FaceIQ's at all — e.g. the under‑chin angle, r ≈ 0 — carries
+  almost nothing, however tight its scatter). Front ratios keep most of their weight; many profile angles and lip
+  lines drop to 5–40%. Their scores were mostly noise and could sink a good profile.
 - **Front/side split 70/30** instead of FaceIQ's 60/40: our side Harmony agrees with FaceIQ's far less well
   (r ≈ 0.4 vs 0.8 for the front), so the front carries more. Raises Harmony agreement from r 0.74 to 0.76.
 - **Range‑set choice.** Picking the set with the best Harmony favoured the most lenient set (East Asian won for
@@ -72,7 +74,7 @@ and scores as the target).
 
   | Measurement | How | Ideal |
   |---|---|---|
-  | Eyebrow thickness | height of the dark brow band, half‑contrast edges against the skin above and below (stops at the upper lid so lid shadow isn't counted) | 7–11 mm |
+  | Eyebrow thickness | height of the dark brow band, half‑contrast edges against the skin above and below (stops at the upper lid so lid shadow isn't counted) | 5.5–11 mm |
   | Eyebrow density | (forehead skin − brow) ÷ skin brightness | ≥ 68% |
   | Brow tail length | where the brow hair ends past the outer eye corner, in eye widths (stops at scalp hair) | 0.35–0.7 |
   | Brow‑to‑eye distance | upper lid → lower brow edge above the pupil | 2–6 mm |
@@ -83,30 +85,57 @@ and scores as the target).
 
   Directions come from looksmax.org's eyebrow and eye‑area guides (full, dark, flat brows that reach past the
   eye corner; low‑set brows; lids close to the iris) and the clinical periorbital literature (scleral show reads
-  as tired). On the benchmark, brow darkness (r = 0.47) and a small brow‑to‑eye gap (r = −0.54) track FaceIQ's
-  Dimorphism; brow tail length tracks Features and Harmony. They feed Features and Dimorphism. **Jaw shadow and
+  as tired). On the benchmark, brow darkness (r = 0.53) and a small brow‑to‑eye gap (r = −0.49) track FaceIQ's
+  Dimorphism; brow tail length tracks Features and Harmony. "Thicker is better" did **not** hold up (thicker
+  brows went with slightly lower FaceIQ scores, r ≈ −0.2), so thickness only penalises clearly thin brows. They feed Features and Dimorphism. **Jaw shadow and
   cheek hollows were measured and dropped**: they correlated *negatively* with FaceIQ — they follow lighting and
   double‑chin shadows, not definition.
 - **Front profile / side profile scores**: the four pillars recomputed from one photo's measurements, each mapped
   onto the same scale.
 
-### Accuracy against FaceIQ (64 faces, automatic landmarks)
+### Accuracy against FaceIQ (119 men, automatic landmarks)
 
 | | before | after |
 |---|---|---|
-| Overall: correlation / mean abs. difference | 0.55 / 1.09 | 0.71 / 0.88 |
-| Front Harmony | 0.68 / 1.22 | 0.79 / 0.95 |
-| Side Harmony | 0.21 / 1.95 | 0.39 / 1.77 |
-| Dimorphism | 0.38 / 1.03 | 0.45 / 1.00 |
-| Features | 0.27 / 2.23 | 0.48 / 1.87 |
+| Overall: correlation / mean abs. difference | 0.66 / 1.10 | 0.79 / 0.88 |
+| Front Harmony | 0.67 / 1.30 | 0.81 / 0.96 |
+| Side Harmony | 0.33 / 1.80 | 0.49 / 1.65 |
+| Angularity | 0.42 / 1.52 | 0.52 / 1.40 |
+| Dimorphism | 0.48 / 0.98 | 0.59 / 0.86 |
+| Features | 0.48 / 1.76 | 0.65 / 1.47 |
 
 Fitting the offsets and reliabilities on half the faces and testing on the other half gives overall correlations
-of 0.75 and 0.61 on the held‑out halves (0.63 and 0.47 before), so the gain isn't overfitting.
+of 0.78 and 0.80 on the held‑out halves (0.69 and 0.64 before), so the gain isn't overfitting.
 
-Sanity checks: a morphed "ideal" male face (front) with a male model's profile scores **8.3** overall (front
-profile 7.7, side profile 8.1, top ~0.2%); the average‑looking reference face scores 4.3 fully automatic and 4.6
-with its hand‑placed points. Scores are not measured against the reference photo — it only shows where each
-landmark goes; every ratio is judged against FaceIQ's ideal ranges.
+By FaceIQ score band (mean FaceIQ → mean ours):
+
+| FaceIQ band | n | FaceIQ | ours |
+|---|---|---|---|
+| under 5 | 30 | 4.09 | 4.43 |
+| 5–6 | 19 | 5.51 | 5.90 |
+| 6–7 | 6 | 6.57 | 7.35 |
+| 7–7.5 | 17 | 7.40 | 7.29 |
+| 7.5–8 | 19 | 7.85 | 7.45 |
+| 8+ | 28 | 8.21 | 7.75 |
+
+Grouped the other way — by our score — it mirrors: faces we rate 8+ average 8.0 at FaceIQ, faces we rate under 5
+average 4.4. That is what imperfect measurement does to any estimate (extremes drift toward the middle), not a
+skewed scale: the two score distributions match (FaceIQ / ours: 25th percentile 5.0 / 5.4, median 7.4 / 6.7,
+90th 8.2 / 8.4). Stretching the top further would push the faces we already over‑rate higher still. Only better
+measurement (mainly the profile) closes it. Before the top‑band faces were added to the fit, faces FaceIQ rates
+8+ came out 1.1–1.7 points low; now 0.5.
+
+Examples (FaceIQ's own photos): Marlon Teixeira 7.8 → 7.82, Marlon Lundgren Garcia 7.9 → 8.05, David Gandy 8.3 →
+8.29, Mathematically Perfect Male Face 9.1 → 8.52. Different photos of the same person can differ by more than
+that — lighting, lens distance, head tilt and expression all move the landmarks.
+
+Sanity checks: a morphed "ideal" male face (front) with a male model's profile scores **9.0** overall (front
+profile 8.8, side profile 8.6); the average‑looking reference face scores 4.1 fully automatic and 4.7 with its
+hand‑placed points. Scores are not measured against the reference photo — it only shows where each landmark
+goes; every ratio is judged against FaceIQ's ideal ranges.
+
+What was tried and not kept, because it didn't hold up on held‑out faces: widening each ratio's score curve by
+our measurement noise, a softer power mean, and fitted (unequal) pillar weights for the overall.
 
 ## Where it can't be identical
 
@@ -124,6 +153,7 @@ landmark goes; every ratio is judged against FaceIQ's ideal ranges.
 ```
 node tools/fit-faceiq.mjs --write     # ratio curves, weights, Harmony map, range sets → js/norms.js
 node tools/faceiq-bench.mjs 64        # (local) rebuild the benchmark from the public wiki
+node tools/faceiq-bench.mjs 120 --min 7 --nolm   # (local) add faces rated 7+ (scores only, no landmark pages)
 node tools/side-shape.mjs             # median jaw-angle / ear-notch position used for profiles
 node tools/fit-looks.mjs --write      # offsets, reliabilities, photo ranges, score maps (needs bench-raw.json)
 ```

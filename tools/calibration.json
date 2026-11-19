@@ -2,75 +2,75 @@
  "_note": "Written by tools/fit-looks.mjs from the FaceIQ benchmark (64 faces, tools/bench.js). view/pillar/overall/byView: spread-preserving maps (slope = FaceIQ SD / our SD) from raw values to FaceIQ's displayed scale. shift: per-ratio convention offsets. rel: s^2/(s^2+sigma^2) reliability of each automatic measurement. look: ideal ranges of the photo measurements. setBias: mean Harmony of each range set. mix: Harmony front/side shares.",
  "view": {
   "front": [
-   -4.1341,
-   1.3805
+   -3.6472,
+   1.3522
   ],
   "side": [
-   -3.1998,
-   1.3881
+   -1.8084,
+   1.227
   ]
  },
  "pillar": {
   "angularity": [
-   -0.9866,
-   1.1792
+   -1.1832,
+   1.1747
   ],
   "dimorphism": [
-   -0.3895,
-   0.986
+   0.3315,
+   0.8755
   ],
   "features": [
-   -9.1056,
-   1.9801
+   -8.0039,
+   1.8491
   ]
  },
  "overall": [
-  0.7503,
-  0.8432
+  0.1311,
+  0.9696
  ],
  "setBias": {
-  "caucasian": 0.0356,
-  "south_asian": 0.0755,
-  "black": -0.1734,
-  "east_asian": 0.0341,
-  "middle_eastern": 0.0188,
-  "hispanic": 0.0094
+  "caucasian": 0.0603,
+  "south_asian": 0.0955,
+  "black": -0.3321,
+  "east_asian": 0.0687,
+  "middle_eastern": 0.0793,
+  "hispanic": 0.0283
  },
  "byView": {
   "front": {
    "angularity": [
-    -1.8283,
-    1.132
+    -2.3361,
+    1.2728
    ],
    "dimorphism": [
-    0.1136,
-    0.8804
+    0.4827,
+    0.8401
    ],
    "features": [
-    -9.2916,
-    1.8979
+    -8.519,
+    1.832
    ],
    "overall": [
-    0.9196,
-    0.8095
+    0.3855,
+    0.9308
    ]
   },
   "side": {
    "angularity": [
-    1.5365,
-    0.8171
+    2.0104,
+    0.7696
    ],
    "dimorphism": [
-    1.7048,
-    0.7578
+    2.1947,
+    0.6937
    ],
    "features": [
-    -4.3462,
-    1.4409
+    -3.4534,
+    1.4077
    ],
    "overall": [
-    1.0481,
-    0.7918
+    0.4227,
+    0.9344
    ]
   }
  },
@@ -81,39 +81,39 @@
  "lookK": 1.5,
  "look": {
   "brow_thickness": {
-   "lo": 7,
+   "lo": 5.5,
    "hi": 11,
    "s": 2.5,
-   "mu": 7.686,
-   "sd": 1.797
+   "mu": 7.414,
+   "sd": 1.475
   },
   "brow_density": {
    "lo": 68,
    "hi": 100,
    "s": 18,
-   "mu": 59.608,
-   "sd": 12.712
+   "mu": 65.368,
+   "sd": 14.403
   },
   "brow_tail_reach": {
    "lo": 0.35,
    "hi": 0.7,
    "s": 0.2,
-   "mu": 0.35,
-   "sd": 0.096
+   "mu": 0.379,
+   "sd": 0.105
   },
   "brow_eye_gap": {
    "lo": 2,
    "hi": 6,
    "s": 4,
-   "mu": 7.223,
-   "sd": 3.284
+   "mu": 5.887,
+   "sd": 3.326
   },
   "iris_exposure": {
    "lo": 0.55,
    "hi": 0.75,
    "s": 0.12,
-   "mu": 0.708,
-   "sd": 0.098
+   "mu": 0.707,
+   "sd": 0.09
   },
   "scleral_show": {
    "lo": 0,
@@ -126,110 +126,118 @@
    "lo": 27,
    "hi": 42,
    "s": 9,
-   "mu": 32.501,
-   "sd": 8.719
+   "mu": 33.698,
+   "sd": 7.136
   },
   "temple_recession": {
    "lo": -30,
    "hi": 2,
    "s": 4,
-   "mu": -1.833,
-   "sd": 4.571
+   "mu": -0.167,
+   "sd": 3.737
   }
  },
  "shift": {
-  "top_third": -1.3331,
-  "middle_third": 1.3165,
-  "brow_low_set": 0.7184,
-  "eye_ar": 0.3796,
-  "brow_tilt": 1.821,
-  "bridge_nose": -0.3594,
-  "nose_tip_pos": 0.8083,
-  "chin_philtrum": 0.3845,
-  "jaw_slope": 5.988,
-  "bigonial": -2.2655,
-  "lower_third_prop": -0.988,
-  "ear_angle": 1.7886,
-  "ear_ratio": -2.5967,
-  "nasofrontal": 10.4154,
+  "top_third": -1.9485,
+  "middle_third": 1.6903,
+  "fwhr": -0.0513,
+  "brow_length": -0.0206,
+  "brow_low_set": 0.7111,
+  "eye_ar": 0.3471,
+  "brow_tilt": 1.6471,
+  "bridge_nose": -0.3152,
+  "nose_tip_pos": 0.8396,
+  "chin_philtrum": 0.422,
+  "jaw_slope": 6.7006,
+  "bigonial": -3.3343,
+  "lower_third_prop": -1.3523,
+  "ear_angle": 1.5753,
+  "ear_ratio": -3.0412,
+  "neck_width": 3.147,
+  "nasofrontal": 11.7991,
   "browridge_incl": -10.4223,
-  "total_convexity": -4.5987,
-  "orbital_vector": -4.5671,
-  "convexity_g": -7.0771,
-  "convexity_n": -6.0099,
-  "anterior_depth": -22.0882,
-  "nasal_tip_angle": -25.4176,
-  "frankfort_tip": -10.2732,
-  "nasal_projection": -0.1007,
-  "nasal_wh": -0.2093,
-  "submental": -18.9853
+  "total_convexity": -5.6632,
+  "z_angle": -3.0275,
+  "orbital_vector": -4.622,
+  "convexity_g": -7.0793,
+  "convexity_n": -5.3953,
+  "anterior_depth": -21.9954,
+  "nasal_tip_angle": -28.8486,
+  "nasomental": -3.6375,
+  "frankfort_tip": -12.2161,
+  "nasal_projection": -0.1083,
+  "nasal_wh": -0.1883,
+  "mentolabial": 8.4465,
+  "ramus_mandible": 0.0393,
+  "mpa": 2.2146,
+  "submental": -13.0327
  },
  "rel": {
-  "top_third": 0.75,
-  "middle_third": 0.752,
-  "lower_third": 0.716,
-  "fwhr": 0.885,
-  "midface_ratio": 0.973,
-  "total_wh": 0.622,
-  "bitemporal": 0.148,
-  "cheekbone_height": 0.812,
-  "esr": 0.857,
-  "one_eye_apart": 0.689,
-  "canthal_tilt": 0.926,
-  "brow_length": 0.472,
-  "brow_low_set": 0.932,
-  "eye_ar": 0.898,
-  "brow_tilt": 0.765,
-  "iaa_jfa_dev": 0.706,
-  "iaa": 0.874,
-  "bridge_nose": 0.723,
-  "icd_nose": 0.526,
-  "nose_tip_pos": 0.738,
+  "top_third": 0.473,
+  "middle_third": 0.658,
+  "lower_third": 0.549,
+  "fwhr": 0.862,
+  "midface_ratio": 0.972,
+  "total_wh": 0.671,
+  "bitemporal": 0.138,
+  "cheekbone_height": 0.211,
+  "esr": 0.848,
+  "one_eye_apart": 0.501,
+  "canthal_tilt": 0.763,
+  "brow_length": 0.438,
+  "brow_low_set": 0.824,
+  "eye_ar": 0.651,
+  "brow_tilt": 0.815,
+  "iaa_jfa_dev": 0.583,
+  "iaa": 0.891,
+  "bridge_nose": 0.302,
+  "icd_nose": 0.621,
+  "nose_tip_pos": 0.411,
   "mouth_corner": 0.873,
-  "cupid_depth": 0.918,
-  "mouth_nose": 0.78,
-  "lip_ratio": 0.927,
-  "ipd_mouth": 0.93,
-  "chin_philtrum": 0.697,
-  "jaw_slope": 0.839,
-  "bigonial": 0.793,
-  "lower_third_prop": 0.542,
-  "jfa": 0.837,
-  "ear_angle": 0.765,
-  "ear_ratio": 0.725,
-  "neck_width": 0.871,
-  "nasofrontal": 0.329,
-  "browridge_incl": 0.288,
-  "upper_forehead": 0.184,
-  "total_convexity": 0.649,
-  "midface_proj": 0.427,
-  "depth_height": 0.415,
-  "z_angle": 0.197,
-  "orbital_vector": 0.752,
-  "convexity_g": 0.482,
-  "convexity_n": 0.539,
-  "anterior_depth": 0.712,
-  "nasal_tip_angle": 0.151,
-  "nasofacial": 0.31,
-  "nasomental": 0.371,
-  "frankfort_tip": 0.566,
-  "tip_rotation": 0.46,
-  "nasolabial": 0.316,
-  "nasal_projection": 0.85,
-  "nasal_wh": 0.557,
-  "mentolabial": 0.574,
-  "holdaway": 0.264,
-  "s_lower": 0.089,
-  "b_lower": 0.086,
-  "e_upper": 0.227,
-  "e_lower": 0.652,
-  "s_upper": 0.197,
-  "b_upper": 0.417,
-  "gonial": 0.456,
-  "ramus_mandible": 0.566,
-  "mpa": 0.422,
-  "gonion_mouth": 0.502,
-  "fh_recession": 0.347,
-  "submental": 0.33
+  "cupid_depth": 0.467,
+  "mouth_nose": 0.625,
+  "lip_ratio": 0.316,
+  "ipd_mouth": 0.85,
+  "chin_philtrum": 0.695,
+  "jaw_slope": 0.75,
+  "bigonial": 0.554,
+  "lower_third_prop": 0.539,
+  "jfa": 0.805,
+  "ear_angle": 0.681,
+  "ear_ratio": 0.642,
+  "neck_width": 0.465,
+  "nasofrontal": 0.147,
+  "browridge_incl": 0.108,
+  "upper_forehead": 0.05,
+  "total_convexity": 0.382,
+  "midface_proj": 0.402,
+  "depth_height": 0.339,
+  "z_angle": 0.236,
+  "orbital_vector": 0.258,
+  "convexity_g": 0.323,
+  "convexity_n": 0.271,
+  "anterior_depth": 0.287,
+  "nasal_tip_angle": 0.143,
+  "nasofacial": 0.321,
+  "nasomental": 0.37,
+  "frankfort_tip": 0.116,
+  "tip_rotation": 0.113,
+  "nasolabial": 0.22,
+  "nasal_projection": 0.334,
+  "nasal_wh": 0.214,
+  "mentolabial": 0.132,
+  "holdaway": 0.219,
+  "s_lower": 0.102,
+  "b_lower": 0.119,
+  "e_upper": 0.228,
+  "e_lower": 0.419,
+  "s_upper": 0.213,
+  "b_upper": 0.407,
+  "gonial": 0.155,
+  "ramus_mandible": 0.186,
+  "mpa": 0.227,
+  "gonion_mouth": 0.11,
+  "fh_recession": 0.158,
+  "submental": 0.05
  }
 }

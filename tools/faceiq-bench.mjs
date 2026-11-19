@@ -2,6 +2,7 @@
 // positions, every ratio value/score and the pillar scores. Output: tools/testdata/faceiq-bench.json (git-ignored).
 //
 //   node tools/faceiq-bench.mjs [count=30]
+//   node tools/faceiq-bench.mjs 110 --min 7 --add slug,slug [--nolm]   # extend with faces rated ≥ 7 (+ named pages)
 //
 // Requests are sequential with a pause between them. Photos are not downloaded; the browser benchmark
 // (tools/bench.js) loads them by URL.
@@ -92,13 +93,16 @@ async function main() {
 
   const index = await get(`${BASE}/llms.txt`);
   const rows = [...index.matchAll(/- \[([^\]]+)\]\(https:\/\/www\.faceiqlabs\.com\/celebs-wiki\/([a-z0-9-]+)\.md\):[^\n]*?Overall ([\d.]+)\/10/g)]
-    .map((m) => ({ name: m[1], slug: m[2], overall: +m[3] })).filter((r) => !/female|perfect/i.test(r.name));
-  // Stratify by overall score so the benchmark covers the whole scale
-  rows.sort((a, b) => b.overall - a.overall);
-  // round-robin over score bins (2.5–8.5) so every part of the scale is represented
-  const bins = Array.from({ length: 12 }, (_, b) => rows.filter((r) => r.overall >= 2.5 + b * 0.5 && r.overall < 3 + b * 0.5).filter((_, i) => i % 5 === 0));
-  const picks = [];
-  for (let i = 0; picks.length < rows.length && i < 80; i++) for (const bin of bins) if (bin[i]) picks.push(bin[i]);
+    .map((m) => ({ name: m[1], slug: m[2], overall: +m[3] }));
+  const arg = (k) => { const i = process.argv.indexOf(k); return i > 0 ? process.argv[i + 1] : null; };
+  const min = +(arg('--min') || 0), add = (arg('--add') || '').split(',').filter(Boolean);
+  const pool = rows.filter((r) => add.includes(r.slug) || (!/female|perfect/i.test(r.name) && r.overall >= min));
+  // Stratify by overall score so the benchmark covers the whole scale (or the part above --min)
+  pool.sort((a, b) => b.overall - a.overall);
+  // round-robin over score bins so every part of the scale is represented
+  const bins = Array.from({ length: 14 }, (_, b) => pool.filter((r) => r.overall >= 2.5 + b * 0.5 && r.overall < 3 + b * 0.5).filter((_, i) => i % (min ? 3 : 5) === 0));
+  const picks = [...pool.filter((r) => add.includes(r.slug))];
+  for (let i = 0; i < 300; i++) for (const bin of bins) if (bin[i]) picks.push(bin[i]);
   const faces = [...prev.faces];
   for (const r of picks) {
     if (faces.length >= count) break;
@@ -114,7 +118,9 @@ async function main() {
     const photos = { front: url('front-restored'), side: url('side-restored'), frontSeg: url('front-segmented-restored'), sideSeg: url('side-segmented-restored') };
     if (!photos.front || !photos.side) continue;
     const lm = { front: {}, side: {} };
-    for (const view of ['front', 'side']) {
+    // --nolm: skip FaceIQ's landmark coordinates (15 extra pages per face); scores and ratios are enough
+    // for checking score calibration
+    if (!process.argv.includes('--nolm')) for (const view of ['front', 'side']) {
       for (const [slug, names] of Object.entries(LM_PAGES[view])) {
         const html = await get(`${BASE}/${r.slug}/harmony/${slug}`); await sleep(250);
         const il = html && illustration(html);
@@ -123,6 +129,7 @@ async function main() {
       }
     }
     faces.push({ slug: r.slug, name: r.name, ...info, photos, lm });
+    have.add(r.slug);
     console.log(`${faces.length}/${count} ${r.name} overall ${info.overall} (${info.ethnicity}) — ${Object.keys(lm.front).length}+${Object.keys(lm.side).length} landmarks`);
     writeFileSync(outPath, JSON.stringify({ built: new Date().toISOString(), faces }, null, 0));
   }

@@ -515,7 +515,10 @@ for (const m of M) {
   // weight: FaceIQ's importance × how reliably the measurement agrees with FaceIQ's (AGG.rel); photo
   // measurements carry AGG.lookK on top
   const w = (AGG.w[m.id] ?? 1) * (AGG.rel?.[m.id] ?? 1) * (m.look ? AGG.lookK ?? 1 : 1);
-  Object.assign(m, { lo: n.lo, hi: n.hi, s: n.s, sig: n.s, mean: n.mu, sd: n.sd, w: +w.toFixed(3), baseW: AGG.w[m.id] ?? 1, rel: AGG.rel?.[m.id] ?? 1 });
+  // s: FaceIQ's fall-off width, widened by our measurement noise (AGG.sEff) so that noise alone doesn't pull a
+  // ratio that truly sits in its ideal range down; s0 keeps FaceIQ's own width
+  const sEff = AGG.sEff?.[m.id] ?? n.s;
+  Object.assign(m, { lo: n.lo, hi: n.hi, s: sEff, s0: n.s, sig: sEff, mean: n.mu, sd: n.sd, w: +w.toFixed(3), baseW: AGG.w[m.id] ?? 1, rel: AGG.rel?.[m.id] ?? 1 });
 }
 // Which profile points each side metric reads (recorded by running it on a recording stand-in), so a metric
 // can be left out when one of its points is hidden in the photo.
