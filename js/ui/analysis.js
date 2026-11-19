@@ -2,8 +2,9 @@
 import { $, $$, el, esc, icon, countUp, modal } from './dom.js';
 import { Stage } from './stage.js';
 import { drawOverlay, drawPoints, drawLinks, bbox } from './draw.js';
-import { PILLARS, METRICS, METRIC_BY_ID, rating, scoreColor, ratioColor, ratioLabel, fmt, fmtRange, barGeom, overlayFor, assessmentDetail } from '../metrics.js';
+import { PILLARS, METRICS, METRIC_BY_ID, rating, scoreColor, ratioColor, ratioHex, scoreHex, ratioLabel, fmt, fmtRange, barGeom, overlayFor, assessmentDetail, percentile, pctText } from '../metrics.js';
 import { faceThumb } from './dashboard.js';
+import { openMetricDetail, openAssessmentDetail } from './detail.js';
 
 const UNDERSTAND = {
   harmony: `Harmony compares your proportions with ideal male ranges — ${METRICS.filter((m) => m.hm && m.view === 'front').length} front ratios (thirds, widths, eye spacing, tilts) and ${METRICS.filter((m) => m.hm && m.view === 'side').length} side ratios (profile angles, nose and lip lines). Each ratio scores 10 inside its ideal range and less the further outside it falls. Key ratios (FWHR, thirds, eye spacing and tilt, jaw width, chin projection) count up to 5× more than minor ones, ratios a photo can’t measure reliably (many profile angles) count less, weak points count extra, and the pillar is placed on the population scale (5 = average). Front counts 70%, side 30%.`,
@@ -20,13 +21,18 @@ export function mountAnalysis(page, app, scan, res, pid) {
   let hView = app.prefs.get('hView', 'front');
   let sort = app.prefs.get('sort', 'low');
   let showLm = app.prefs.get('showLm', false);
+  // this pillar from one photo alone (Harmony: front / side Harmony)
+  const vt = (vw) => (isH ? res.pillars.harmony[vw] : res.views?.[vw]?.[pid]);
 
   const v = el(`<div class="analysis">
     <div class="seg pillar-tabs">${PILLARS.map((p) => `<a href="#/scan/${scan.id}/analysis/${p.id}" class="${p.id === pid ? 'on' : ''}">${p.name}</a>`).join('')}</div>
     <div class="card a-head fade-up">
       <canvas class="a-thumb" width="120" height="120"></canvas>
-      <div><div class="cap">${pillar.name}</div><div class="a-score"><span class="num" id="aNum" style="color:${scoreColor(score)}">0.00</span><span class="den">/10</span></div></div>
-      <div class="a-rate">${rating(score)} ${pillar.name}</div>
+      <div><div class="cap">${pillar.name}</div><div class="a-score"><span class="num" id="aNum" style="color:${scoreColor(score)}">0.00</span><span class="den">/10</span></div>
+        <div class="a-rate">${rating(score)} · higher than ${pctText(percentile(score))}% of men</div></div>
+      <div class="view-tiles">${['front', 'side'].map((vw) => { const sc = vt(vw); return `<button class="vtile ${isH && vw === hView ? 'on' : ''}" data-vt="${vw}" ${Number.isFinite(sc) ? '' : 'disabled'}>
+        <canvas width="88" height="88" data-thumb="${vw}"></canvas>
+        <span><em>${vw === 'front' ? 'Front' : 'Side'}</em><b class="num" data-n="${Number.isFinite(sc) ? sc : ''}" style="color:${scoreHex(sc)}">—</b><small>/10</small></span></button>`; }).join('')}</div>
     </div>
     <div class="a-grid">
       <div class="photo-card fade-up">
@@ -62,6 +68,8 @@ export function mountAnalysis(page, app, scan, res, pid) {
   page.appendChild(v);
   countUp($('#aNum', v), score, { delay: 100 });
   faceThumb(app, scan, $('.a-thumb', v));
+  $$('.vtile b.num', v).forEach((n, i) => n.dataset.n && countUp(n, +n.dataset.n, { delay: 220 + i * 90 }));
+  for (const vw of ['front', 'side']) viewThumb(app, scan, vw, $(`[data-thumb="${vw}"]`, v));
 
   // ── photo stages ──
   const stages = {};
@@ -80,10 +88,11 @@ export function mountAnalysis(page, app, scan, res, pid) {
           g.addColorStop(0, 'rgba(6,10,12,0.30)'); g.addColorStop(0.6, 'rgba(6,10,12,0.38)'); g.addColorStop(1, 'rgba(6,10,12,0.85)');
           ctx.fillStyle = g; ctx.fillRect(0, 0, s.w, s.h);
           if (showLm) { drawLinks(ctx, s, lm, view, { color: 'rgba(255,255,255,0.3)' }); drawPoints(ctx, s, lm, { r: 1.8, alpha: 0.85 }); }
-          if (active && active.m.view === view) {
+          if (active && active.m.view === view && Number.isFinite(res.values[active.m.id].v)) {
             const p = Math.min(1, (performance.now() - t0) / 700);
             const { prims, inv } = overlayFor(active.m, res);
-            drawOverlay(ctx, s, prims, inv, { progress: easeOut(p), text: fmt(active.m, res.values[active.m.id].v) });
+            // lines take the colour of the score shown next to them
+            drawOverlay(ctx, s, prims, inv, { progress: easeOut(p), text: fmt(active.m, res.values[active.m.id].v), color: ratioHex(active.sc ?? res.values[active.m.id].s) });
           }
         },
       });
@@ -121,12 +130,12 @@ export function mountAnalysis(page, app, scan, res, pid) {
       m = METRIC_BY_ID[id]; name = m.name; sc = res.values[id].s;
     }
     if (active && active.key === kind + id) return;
-    active = { key: kind + id, m };
+    active = { key: kind + id, m, sc };
     $$('.mrow', v).forEach((r) => r.classList.toggle('active', r.dataset.id === id && r.dataset.kind === kind));
     $('#pfMetric', v).textContent = name;
     const has = Number.isFinite(sc) && (kind === 'a' || Number.isFinite(res.values[id].v));
     $('#pfScore', v).textContent = has ? sc.toFixed(1) : '—';
-    $('#pfScore', v).style.color = has ? scoreColor(sc) : 'var(--faint)';
+    $('#pfScore', v).style.color = has ? ratioHex(sc) : 'var(--faint)';
     $('#pfRate', v).textContent = has ? rating(sc) : 'Not measured';
     showView(m.view);
     focusOn(m);
@@ -192,15 +201,15 @@ export function mountAnalysis(page, app, scan, res, pid) {
     $$('.mrow', v).forEach((row) => {
       const main = $('.mrow-main', row);
       main.addEventListener('mouseenter', () => activate(row.dataset.id, row.dataset.kind));
+      // click: the full breakdown, paging through the list in its current order
       main.addEventListener('click', () => {
-        const open = !row.classList.contains('open');
-        $$('.mrow.open', v).forEach((r) => r !== row && r.classList.remove('open'));
-        row.classList.toggle('open', open);
         activate(row.dataset.id, row.dataset.kind);
+        if (row.dataset.kind === 'm') openMetricDetail(app, scan, res, list.map((r) => r.id), list.findIndex((r) => r.id === row.dataset.id));
+        else openAssessmentDetail(app, scan, res, pid, list.map((r) => r.a), list.findIndex((r) => r.id === row.dataset.id));
       });
       $$('.sub-row', row).forEach((sr) => sr.addEventListener('mouseenter', () => {
         const m = METRIC_BY_ID[sr.dataset.m];
-        active = { key: 'sub' + m.id, m };
+        active = { key: 'sub' + m.id, m, sc: res.values[m.id].s };
         showView(m.view);
         $('#pfMetric', v).textContent = m.name;
         focusOn(m);
@@ -213,9 +222,14 @@ export function mountAnalysis(page, app, scan, res, pid) {
   // ── controls ──
   $('#sort', v).value = sort;
   $('#sort', v).onchange = (e) => { sort = e.target.value; app.prefs.set('sort', sort); renderList(); };
+  // Front / Side tiles: switch the Harmony list; on other pillars they show that photo
+  $$('.vtile', v).forEach((t) => (t.onclick = () => {
+    if (isH) $(`#hSeg button[data-h="${t.dataset.vt}"]`, v)?.click();
+    else { showView(t.dataset.vt); $$('.vtile', v).forEach((x) => x.classList.toggle('on', x === t)); }
+  }));
   if (isH) {
     const seg = $('#hSeg', v);
-    const sync = () => $$('button', seg).forEach((b) => b.classList.toggle('on', b.dataset.h === hView));
+    const sync = () => { $$('button', seg).forEach((b) => b.classList.toggle('on', b.dataset.h === hView)); $$('.vtile', v).forEach((x) => x.classList.toggle('on', x.dataset.vt === hView)); };
     sync();
     $$('button', seg).forEach((b) => (b.onclick = () => {
       hView = b.dataset.h;
@@ -379,4 +393,16 @@ export function scoringGuide() {
     <p class="m-body">Harmony = 70% front + 30% side. Overall combines the four pillars like a geometric mean, so your weakest pillar pulls hardest.</p>
     <button class="btn dark block" data-x>Close</button>`, { cls: 'small' });
   m.el.querySelector('[data-x]').onclick = () => m.close();
+}
+
+// Small face crop for the Front / Side tiles
+async function viewThumb(app, scan, view, canvas) {
+  if (!canvas) return;
+  const img = await app.img(scan[view].url);
+  const b = bbox(scan[view].lm, 0.08);
+  const size = Math.max(b.x1 - b.x0, b.y1 - b.y0);
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, cx - size / 2, cy - size / 2, size, size, 0, 0, canvas.width, canvas.height);
 }

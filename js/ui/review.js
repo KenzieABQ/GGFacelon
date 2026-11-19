@@ -1,24 +1,28 @@
 // Review all landmarks on both photos; drag any point (with a magnifier loupe) before analysing.
-import { $, $$, el, icon } from './dom.js';
+import { $, $$, el, esc, icon } from './dom.js';
 import { Stage } from './stage.js';
 import { drawPoints, drawLinks, bbox, roundRect } from './draw.js';
-import { DEF_BY_ID } from '../landmarks.js';
+import { DEF_BY_ID, REF } from '../landmarks.js';
 
 // Reusable editable stage for one view (also used by Simulate)
-export function editableStage(host, img, getLm, setLm, view, { onChange, fitPad = 0.08, showLinks = true, loupe = true } = {}) {
+// refImg: the reference photo — when given, hovering a point shows where it belongs (gone once you drag it)
+export function editableStage(host, img, getLm, setLm, view, { onChange, fitPad = 0.08, showLinks = true, loupe = true, refImg = null } = {}) {
   let hover = null, drag = null;
   const lens = loupe ? el('<canvas class="loupe" width="300" height="300"></canvas>') : null;
   if (lens) host.appendChild(lens);
+  const tip = refImg ? el('<div class="lm-tip" aria-hidden="true"></div>') : null;
+  if (tip) host.appendChild(tip);
+  let tipT = 0;
   const st = new Stage(host, img, {
     bg: '#0f1316',
     onDraw: (ctx, s) => {
       const lm = getLm();
       if (showLinks) drawLinks(ctx, s, lm, view, { color: 'rgba(255,255,255,0.42)' });
       drawPoints(ctx, s, lm, { r: 2.8, active: drag, hover });
-      if (hover && !drag) {
+      if (hover && !drag && !tip) {
         const p = s.toScreen(lm[hover]);
         const name = DEF_BY_ID[view][hover]?.name || hover;
-        ctx.font = '600 12px Inter, system-ui, sans-serif';
+        ctx.font = '600 12px Manrope, system-ui, sans-serif';
         const w = ctx.measureText(name).width + 16;
         const x = Math.min(s.w - w - 6, Math.max(6, p.x - w / 2)), y = Math.max(6, p.y - 34);
         ctx.fillStyle = 'rgba(15,19,22,0.85)';
@@ -54,7 +58,7 @@ export function editableStage(host, img, getLm, setLm, view, { onChange, fitPad 
     const sp = { x: e.offsetX, y: e.offsetY };
     const k = nearest(sp);
     c.setPointerCapture(e.pointerId);
-    if (k) { drag = k; c.style.cursor = 'grabbing'; showLens(sp); }
+    if (k) { drag = k; c.style.cursor = 'grabbing'; hideTip(); showLens(sp); }
     else pan = { sp, v: { ...st.view } };
     st.render();
   });
@@ -73,7 +77,7 @@ export function editableStage(host, img, getLm, setLm, view, { onChange, fitPad 
       return;
     }
     const k = nearest(sp);
-    if (k !== hover) { hover = k; c.style.cursor = k ? 'grab' : 'default'; st.render(); }
+    if (k !== hover) { hover = k; c.style.cursor = k ? 'grab' : 'default'; st.render(); if (k) showTip(k); else hideTip(); }
   });
   const up = () => {
     if (drag) onChange && onChange(drag, true);
@@ -84,7 +88,36 @@ export function editableStage(host, img, getLm, setLm, view, { onChange, fitPad 
   };
   c.addEventListener('pointerup', up);
   c.addEventListener('pointercancel', up);
-  c.addEventListener('pointerleave', () => { if (!drag && hover) { hover = null; st.render(); } });
+  c.addEventListener('pointerleave', () => { hideTip(); if (!drag && hover) { hover = null; st.render(); } });
+  c.addEventListener('wheel', hideTip, { passive: true });
+
+  // Hint card: name, where it goes, and the reference photo zoomed on the same point
+  function showTip(k) {
+    if (!tip) return;
+    clearTimeout(tipT);
+    tipT = setTimeout(() => {
+      if (hover !== k || drag) return;
+      const def = DEF_BY_ID[view][k], r = REF[view][k];
+      if (!def) return;
+      tip.innerHTML = `<canvas width="300" height="200"></canvas><div class="lm-tip-t"><b>${esc(def.name)}</b><em>${esc(def.anat)}</em><p>${esc(def.how)}</p></div>`;
+      if (r) {
+        const ctx = tip.querySelector('canvas').getContext('2d');
+        const z = def.zoom === 'close' ? 150 : def.zoom === 'medium' ? 240 : 380, W = 300, H = 200;
+        ctx.drawImage(refImg, r[0] - z / 2, r[1] - (z * H) / W / 2, z, (z * H) / W, 0, 0, W, H);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(W / 2, H / 2, 11, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#ff3b4f'; ctx.beginPath(); ctx.arc(W / 2, H / 2, 3, 0, Math.PI * 2); ctx.fill();
+      } else tip.querySelector('canvas').remove();
+      const p = st.toScreen(getLm()[k]);
+      const tw = 240, th = tip.offsetHeight || 230;
+      const left = p.x + 18 + tw > st.w ? p.x - 18 - tw : p.x + 18;
+      const top = Math.max(8, Math.min(st.h - th - 8, p.y - th / 2));
+      tip.style.left = Math.max(8, left) + 'px';
+      tip.style.top = top + 'px';
+      tip.classList.add('on');
+    }, 120);
+  }
+  function hideTip() { clearTimeout(tipT); tip && tip.classList.remove('on'); }
   c.addEventListener('wheel', (e) => { e.preventDefault(); st.zoomAt({ x: e.offsetX, y: e.offsetY }, Math.exp(-e.deltaY * 0.0015)); }, { passive: false });
   c.addEventListener('dblclick', fit);
 
@@ -117,7 +150,7 @@ export function mountReview(body, app, draft, { onBack, onAnalyze }) {
   const v = el(`<div class="review fade-up">
     <div class="review-head">
       <h1 class="serif">Review your landmarks <span class="chip">${Object.keys(draft.front.lm).length + Object.keys(draft.side.lm).length} points</span></h1>
-      <p class="sub">Drag any point to fine‑tune it. Scroll to zoom, double‑click to reset the view.</p>
+      <p class="sub">Hover a point to see where it belongs; drag it to fine‑tune. Scroll to zoom, double‑click to reset the view.</p>
     </div>
     <div class="review-grid">
       <div class="review-card"><div class="stage-host" data-v="front"></div><div class="rc-tag">Front</div>
@@ -136,8 +169,9 @@ export function mountReview(body, app, draft, { onBack, onAnalyze }) {
   (async () => {
     for (const view of ['front', 'side']) {
       const img = await app.img(draft[view].url);
+      const refImg = await app.img(view === 'front' ? 'assets/ref-front.jpg' : 'assets/ref-side.jpg').catch(() => null);
       if (!alive) return;
-      const ed = editableStage($(`[data-v="${view}"]`, v), img, () => draft[view].lm, (lm) => { draft[view].lm = lm; }, view);
+      const ed = editableStage($(`[data-v="${view}"]`, v), img, () => draft[view].lm, (lm) => { draft[view].lm = lm; }, view, { refImg });
       ed.view = view;
       eds.push(ed);
     }

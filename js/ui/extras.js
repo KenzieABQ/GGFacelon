@@ -132,41 +132,8 @@ export function mountSimulate(page, app, scan, res) {
 }
 
 // ───────────────────────── Compare ─────────────────────────
-export function mountCompare(page, app, scan, otherId) {
-  if (app.scans.length < 2) {
-    page.appendChild(el(`<div class="card empty-small fade-up"><h2>Compare scans</h2><p class="sub">You need at least two scans to compare. Take another scan — for example after a haircut, weight change or with better lighting — and see what moved.</p><a class="btn dark" href="#/new">${icon('scan', 16)} New scan</a></div>`));
-    return;
-  }
-  let A = app.scans.find((s) => s.id === otherId && s.id !== scan.id) || app.scans.find((s) => s.id !== scan.id);
-  let B = scan;
-  const opt = (sel) => app.scans.map((s) => `<option value="${s.id}" ${s.id === sel.id ? 'selected' : ''}>${new Date(s.created).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })} · ${app.result(s).overall.toFixed(2)}</option>`).join('');
-  const v = el(`<div class="compare">
-    <div class="card cmp-head fade-up">
-      <div class="cmp-side"><canvas width="160" height="160" id="cA"></canvas><select class="select" id="sA">${opt(A)}</select></div>
-      <div class="cmp-vs">vs</div>
-      <div class="cmp-side"><canvas width="160" height="160" id="cB"></canvas><select class="select" id="sB">${opt(B)}</select></div>
-    </div>
-    <div class="card fade-up" id="cmpBody"></div>
-  </div>`);
-  page.appendChild(v);
-  const render = () => {
-    const ra = app.result(A), rb = app.result(B);
-    faceThumb(app, A, $('#cA', v)); faceThumb(app, B, $('#cB', v));
-    const d = (x) => `<span class="delta ${x > 0.005 ? 'up' : x < -0.005 ? 'down' : ''}">${x > 0 ? '+' : ''}${x.toFixed(2)}</span>`;
-    const rows = METRICS.map((m) => ({ m, a: ra.values[m.id], b: rb.values[m.id] })).sort((p, q) => Math.abs(q.b.s - q.a.s) - Math.abs(p.b.s - p.a.s));
-    $('#cmpBody', v).innerHTML = `
-      <div class="cmp-pillars">
-        <div class="cmp-p"><span>Overall</span><b>${ra.overall.toFixed(2)} → ${rb.overall.toFixed(2)}</b>${d(rb.overall - ra.overall)}</div>
-        ${PILLARS.map((p) => `<div class="cmp-p"><span>${p.name}</span><b>${ra.pillars[p.id].score.toFixed(2)} → ${rb.pillars[p.id].score.toFixed(2)}</b>${d(rb.pillars[p.id].score - ra.pillars[p.id].score)}</div>`).join('')}
-      </div>
-      <table class="tbl"><thead><tr><th>Measurement</th><th>View</th><th>A</th><th>B</th><th>Score Δ</th></tr></thead><tbody>
-      ${rows.map((r) => `<tr><td>${esc(r.m.name)}</td><td class="muted">${r.m.view === 'front' ? 'Front' : 'Side'}</td><td>${fmt(r.m, r.a.v)}</td><td>${fmt(r.m, r.b.v)}</td><td>${d(r.b.s - r.a.s)}</td></tr>`).join('')}
-      </tbody></table>`;
-  };
-  $('#sA', v).onchange = (e) => { A = app.scan(e.target.value); render(); };
-  $('#sB', v).onchange = (e) => { B = app.scan(e.target.value); render(); };
-  render();
-}
+// Compare lives in compare.js
+export { mountCompare } from './compare.js';
 
 // ───────────────────────── Methodology ─────────────────────────
 export function mountMethodology(page) {
@@ -207,65 +174,102 @@ export async function exportCard(app, scan, res) {
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#f6f7f9'; ctx.fillRect(0, 0, W, H);
-  const font = (w, s, f = 'Inter, system-ui, sans-serif') => `${w} ${s}px ${f}`;
-  ctx.fillStyle = '#111827'; ctx.font = font(700, 34); ctx.fillText('GGFacelon', 70, 92);
-  ctx.fillStyle = '#6b7280'; ctx.font = font(500, 24); ctx.textAlign = 'right';
-  ctx.fillText(new Date(scan.created).toLocaleDateString([], { dateStyle: 'long' }), W - 70, 92);
-  ctx.textAlign = 'left';
-  // photos
-  const ph = async (view, x) => {
-    const img = await app.img(scan[view].url);
-    const b = bbox(scan[view].lm, 0.15);
-    const sz = Math.max(b.x1 - b.x0, (b.y1 - b.y0) * 0.86);
-    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
-    ctx.save();
-    rr(ctx, x, 140, 455, 530, 32); ctx.clip();
-    ctx.drawImage(img, cx - sz / 2, cy - (sz * 530) / 455 / 2, sz, (sz * 530) / 455, x, 140, 455, 530);
+  await document.fonts?.ready;
+  const font = (w, s) => `${w} ${s}px Manrope, system-ui, sans-serif`;
+  const hex = (s) => (s >= 7 ? '#3ddc97' : s >= 5.5 ? '#a8d84e' : s >= 4 ? '#f5b544' : '#ff6b5e');
+  const rgba = (h, a) => { const n = parseInt(h.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
+  const [fi, si] = await Promise.all([app.img(scan.front.url), app.img(scan.side.url)]);
+
+  // backdrop: the front photo, heavily blurred, under a dark wash and two soft glows
+  ctx.fillStyle = '#05070a'; ctx.fillRect(0, 0, W, H);
+  {
+    const k = Math.max(W / fi.naturalWidth, H / fi.naturalHeight) * 1.15;
+    ctx.save(); ctx.filter = 'blur(70px) saturate(1.25)'; ctx.globalAlpha = 0.55;
+    ctx.drawImage(fi, (W - fi.naturalWidth * k) / 2, (H - fi.naturalHeight * k) / 2, fi.naturalWidth * k, fi.naturalHeight * k);
+    ctx.restore();
+    const wash = ctx.createLinearGradient(0, 0, 0, H);
+    wash.addColorStop(0, 'rgba(5,7,10,0.55)'); wash.addColorStop(0.45, 'rgba(5,7,10,0.72)'); wash.addColorStop(1, 'rgba(5,7,10,0.94)');
+    ctx.fillStyle = wash; ctx.fillRect(0, 0, W, H);
+    const glow = (x, y, r, col) => { const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); };
+    glow(250, 830, 420, rgba(hex(res.overall), 0.16));
+    glow(980, 120, 380, 'rgba(110,140,255,0.10)');
+  }
+  const glass = (x, y, w, h, r = 30) => {
+    ctx.save(); rr(ctx, x, y, w, h, r);
+    ctx.fillStyle = 'rgba(255,255,255,0.055)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.11)'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
   };
-  await ph('front', 70); await ph('side', 555);
-  const col = (s) => (s >= 7.5 ? '#2f9e6e' : s >= 6 ? '#8aa83a' : s >= 4.5 ? '#d9962b' : '#d4574e');
-  // front / side profile score on each photo
-  for (const [view, x, label] of [['front', 70, 'FRONT PROFILE'], ['side', 555, 'SIDE PROFILE']]) {
+  // header
+  ctx.fillStyle = '#fff'; ctx.font = font(800, 32); ctx.fillText('GGFacelon', 70, 88);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = font(500, 22); ctx.textAlign = 'right';
+  ctx.fillText(new Date(scan.created).toLocaleDateString([], { dateStyle: 'long' }), W - 70, 88); ctx.textAlign = 'left';
+
+  // photos with their profile scores
+  const ph = (img, view, x) => {
+    const b = bbox(scan[view].lm, 0.16), w = 455, h = 500;
+    const sz = Math.max(b.x1 - b.x0, ((b.y1 - b.y0) * w) / h);
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    ctx.save(); rr(ctx, x, 130, w, h, 30); ctx.clip();
+    ctx.drawImage(img, cx - sz / 2, cy - (sz * h) / w / 2, sz, (sz * h) / w, x, 130, w, h);
+    const g = ctx.createLinearGradient(0, 130 + h * 0.55, 0, 130 + h); g.addColorStop(0, 'rgba(5,7,10,0)'); g.addColorStop(1, 'rgba(5,7,10,0.85)');
+    ctx.fillStyle = g; ctx.fillRect(x, 130, w, h);
+    ctx.restore();
+    ctx.save(); rr(ctx, x, 130, w, h, 30); ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
     const sc = res.views?.[view]?.score;
-    if (!Number.isFinite(sc)) continue;
-    ctx.fillStyle = 'rgba(17,24,39,0.78)'; rr(ctx, x + 20, 588, 250, 62, 20); ctx.fill();
-    ctx.fillStyle = '#d1d5db'; ctx.font = font(600, 17); ctx.fillText(label, x + 40, 613);
-    ctx.fillStyle = '#ffffff'; ctx.font = font(700, 26); ctx.fillText(sc.toFixed(2), x + 40, 641);
-  }
-  // score
-  ctx.fillStyle = '#fff'; rr(ctx, 70, 710, 940, 300, 32); ctx.fill();
-  ctx.fillStyle = '#6b7280'; ctx.font = font(600, 24); ctx.fillText('OVERALL SCORE', 120, 775);
-  ctx.fillStyle = col(res.overall); ctx.font = font(700, 128); ctx.fillText(res.overall.toFixed(2), 112, 905);
+    ctx.fillStyle = 'rgba(255,255,255,0.62)'; ctx.font = font(700, 17); ctx.fillText(view === 'front' ? 'FRONT PROFILE' : 'SIDE PROFILE', x + 28, 130 + h - 70);
+    if (Number.isFinite(sc)) {
+      ctx.save(); ctx.shadowColor = rgba(hex(sc), 0.55); ctx.shadowBlur = 24;
+      ctx.fillStyle = hex(sc); ctx.font = font(800, 46); ctx.fillText(sc.toFixed(2), x + 26, 130 + h - 22); ctx.restore();
+    }
+  };
+  ph(fi, 'front', 70); ph(si, 'side', 555);
+
+  // overall
+  glass(70, 665, 940, 330);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = font(700, 19); ctx.fillText('OVERALL SCORE', 116, 728);
+  ctx.save(); ctx.shadowColor = rgba(hex(res.overall), 0.5); ctx.shadowBlur = 48;
+  ctx.fillStyle = hex(res.overall); ctx.font = font(800, 132); ctx.fillText(res.overall.toFixed(2), 106, 866); ctx.restore();
   const sw = ctx.measureText(res.overall.toFixed(2)).width;
-  ctx.fillStyle = '#9ca3af'; ctx.font = font(500, 44); ctx.fillText('/10', 122 + sw, 905);
-  ctx.fillStyle = '#111827'; ctx.font = font(600, 30); ctx.fillText(rating(res.overall), 120, 960);
-  ctx.fillStyle = '#6b7280'; ctx.font = font(500, 24); ctx.fillText(`Higher than ${pctText(res.percentile)}% of men`, 120, 995);
+  ctx.font = font(800, 132); const sw2 = ctx.measureText(res.overall.toFixed(2)).width;
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = font(600, 40); ctx.fillText('/10', 116 + Math.max(sw, sw2), 866);
+  ctx.fillStyle = '#fff'; ctx.font = font(700, 30); ctx.fillText(rating(res.overall), 116, 920);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = font(500, 22); ctx.fillText(`Higher than ${pctText(res.percentile)}% of men`, 116, 956);
   PILLARS.forEach((p, i) => {
-    const y = 770 + i * 58;
-    const s = res.pillars[p.id].score;
-    ctx.fillStyle = '#374151'; ctx.font = font(600, 24); ctx.fillText(p.name, 600, y + 8);
-    ctx.fillStyle = '#eef0f3'; rr(ctx, 600, y + 20, 290, 10, 5); ctx.fill();
-    ctx.fillStyle = col(s); rr(ctx, 600, y + 20, 29 * s, 10, 5); ctx.fill();
-    ctx.fillStyle = col(s); ctx.font = font(700, 26); ctx.textAlign = 'right'; ctx.fillText(s.toFixed(2), 1000, y + 30); ctx.textAlign = 'left';
+    const y = 728 + i * 64, s = res.pillars[p.id].score, x = 600, bw = 300;
+    ctx.fillStyle = 'rgba(255,255,255,0.78)'; ctx.font = font(600, 22); ctx.fillText(p.name, x, y);
+    ctx.fillStyle = 'rgba(255,255,255,0.09)'; rr(ctx, x, y + 14, bw, 9, 4.5); ctx.fill();
+    const g = ctx.createLinearGradient(x, 0, x + bw, 0); g.addColorStop(0, rgba(hex(s), 0.55)); g.addColorStop(1, hex(s));
+    ctx.save(); ctx.shadowColor = rgba(hex(s), 0.5); ctx.shadowBlur = 12; ctx.fillStyle = g; rr(ctx, x, y + 14, Math.max(9, (bw * s) / 10), 9, 4.5); ctx.fill(); ctx.restore();
+    ctx.fillStyle = hex(s); ctx.font = font(800, 24); ctx.textAlign = 'right'; ctx.fillText(s.toFixed(2), 970, y + 2); ctx.textAlign = 'left';
   });
-  // highlights
-  const top = METRICS.filter((m) => m.hm).map((m) => ({ m, ...res.values[m.id] })).filter((t) => Number.isFinite(t.v)).sort((a, b) => b.s - a.s).slice(0, 4);
-  ctx.fillStyle = '#fff'; rr(ctx, 70, 1040, 940, 230, 32); ctx.fill();
-  ctx.fillStyle = '#6b7280'; ctx.font = font(600, 22); ctx.fillText('TOP RATIOS', 120, 1095);
+
+  // strongest measurements
+  const top = METRICS.filter((m) => m.hm || m.look).map((m) => ({ m, ...res.values[m.id] })).filter((t) => Number.isFinite(t.v) && t.s >= 9)
+    .sort((a, b) => b.m.w - a.m.w).slice(0, 4);
+  glass(70, 1025, 940, 225);
+  ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = font(700, 19); ctx.fillText('STRONGEST', 116, 1080);
   top.forEach((t, i) => {
-    const x = 120 + (i % 2) * 450, y = 1150 + Math.floor(i / 2) * 64;
-    ctx.fillStyle = '#111827'; ctx.font = font(600, 26); ctx.fillText(t.m.name.length > 24 ? t.m.name.slice(0, 23) + '…' : t.m.name, x, y);
-    ctx.fillStyle = col(t.s); ctx.font = font(500, 22); ctx.fillText(`${fmt(t.m, t.v)} · ${t.s.toFixed(2)}`, x, y + 30);
+    const x = 116 + (i % 2) * 450, y = 1130 + Math.floor(i / 2) * 64;
+    ctx.fillStyle = '#fff'; ctx.font = font(700, 25); ctx.fillText(t.m.name.length > 26 ? t.m.name.slice(0, 25) + '…' : t.m.name, x, y);
+    ctx.fillStyle = hex(t.s); ctx.font = font(600, 21); ctx.fillText(`${fmt(t.m, t.v)} · ideal`, x, y + 30);
   });
-  ctx.fillStyle = '#9ca3af'; ctx.font = font(500, 20); ctx.textAlign = 'center';
-  ctx.fillText('70 landmark ratios · analysed on‑device', W / 2, 1315);
-  const a = document.createElement('a');
-  a.download = `ggfacelon-${new Date(scan.created).toISOString().slice(0, 10)}.png`;
-  a.href = c.toDataURL('image/png');
-  a.click();
-  toast('Report image saved');
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.font = font(500, 19); ctx.textAlign = 'center';
+  ctx.fillText(`${METRICS.length} measurements · analysed on‑device · ggfacelon`, W / 2, 1302);
+  ctx.textAlign = 'left';
+
+  // preview, then save
+  const url = c.toDataURL('image/png');
+  const { modal } = await import('./dom.js');
+  const m = modal(`<div class="share-prev"><img src="${url}" alt="Report card"><div class="m-actions"><button class="btn ghost" data-x>Close</button><button class="btn dark" data-dl>${icon('download', 16)} Download PNG</button></div></div>`, { cls: 'share' });
+  m.el.querySelector('[data-x]').onclick = () => m.close();
+  m.el.querySelector('[data-dl]').onclick = () => {
+    const a = document.createElement('a');
+    a.download = `ggfacelon-${new Date(scan.created).toISOString().slice(0, 10)}.png`;
+    a.href = url;
+    a.click();
+    toast('Report image saved');
+  };
 }
 function rr(ctx, x, y, w, h, r) {
   ctx.beginPath();

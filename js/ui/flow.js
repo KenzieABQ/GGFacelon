@@ -229,6 +229,8 @@ export function mountFlow(root, app, opts) {
     return mountVerify(body, app, draft, view, {
       onBack: () => (view === 'front' ? step(stepUpload, 'side') : step(stepVerify, 'front')),
       onDone: () => (view === 'front' ? step(stepVerify, 'side') : step(stepReview)),
+      // trust the automatic points for both photos and go straight to the results (can be edited later)
+      onSkip: () => step(stepAnalyze),
     });
   }
 

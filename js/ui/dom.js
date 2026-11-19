@@ -65,7 +65,7 @@ export function modal(html, { onClose, cls = '' } = {}) {
     setTimeout(() => wrap.remove(), 180);
     onClose && onClose();
   };
-  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  const onKey = (e) => { if (e.key === 'Escape' && root.lastElementChild === wrap) close(); }; // only the top modal
   wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) close(); });
   document.addEventListener('keydown', onKey);
   root.appendChild(wrap);
@@ -103,19 +103,32 @@ export function toast(msg, ms = 2600) {
   toastT = setTimeout(() => t.classList.remove('show'), ms);
 }
 
-// ── count up ──
+// ── rolling numbers ──
+// Each digit is a little reel that spins down to its value with a motion blur, right-hand digits spinning a
+// touch longer (Web Animations API — no library needed). Screen readers get the plain value.
 export function countUp(node, to, { dp = 2, ms = 1100, delay = 0 } = {}) {
-  const start = performance.now() + delay;
+  rollNumber(node, to, { dp, ms: ms + 250, delay });
+}
+export function rollNumber(node, to, { dp = 2, ms = 1350, delay = 0 } = {}) {
+  const text = Number.isFinite(+to) ? (+to).toFixed(dp) : '—';
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) { node.textContent = to.toFixed(dp); return; }
-  node.textContent = (0).toFixed(dp);
-  const tick = (now) => {
-    const t = Math.min(1, Math.max(0, (now - start) / ms));
-    const e = 1 - Math.pow(1 - t, 4);
-    node.textContent = (to * e).toFixed(dp);
-    if (t < 1) requestAnimationFrame(tick);
-  };
-  requestAnimationFrame(tick);
+  if (reduce || !node.animate || text === '—') { node.textContent = text; return; }
+  node.classList.add('roll');
+  node.setAttribute('aria-label', text);
+  const digits = '0123456789';
+  node.innerHTML = [...text].map((ch) => (/\d/.test(ch)
+    ? `<span class="rd" aria-hidden="true"><span class="rc">${(digits + digits).split('').map((d) => `<i>${d}</i>`).join('')}<i>${ch}</i></span></span>`
+    : `<span class="rs" aria-hidden="true">${ch}</span>`)).join('');
+  let k = 0;
+  node.querySelectorAll('.rc').forEach((col) => {
+    const steps = col.children.length - 1; // land on the last cell (the target digit)
+    const dur = ms + k * 140;
+    col.animate([{ transform: 'translateY(0)' }, { transform: `translateY(-${steps * 1.12}em)` }],
+      { duration: dur, delay, easing: 'cubic-bezier(.16,.84,.24,1)', fill: 'both' });
+    col.animate([{ filter: 'blur(0px)', opacity: 0.35 }, { filter: 'blur(2.4px)', opacity: 1, offset: 0.25 }, { filter: 'blur(1.2px)', offset: 0.7 }, { filter: 'blur(0px)', opacity: 1 }],
+      { duration: dur, delay, easing: 'ease-out', fill: 'both' });
+    k++;
+  });
 }
 
 export function relTime(ts) {

@@ -11,7 +11,7 @@ const ZOOMS = [
   { id: 'close', label: 'Close', frac: 0.2 },
 ];
 
-export function mountVerify(body, app, draft, view, { onBack, onDone }) {
+export function mountVerify(body, app, draft, view, { onBack, onDone, onSkip }) {
   let defs = DEFS[view];
   const d = draft[view];
   d.confirmed = d.confirmed || {};
@@ -61,7 +61,8 @@ export function mountVerify(body, app, draft, view, { onBack, onDone }) {
         <div class="cap">Zoom level</div>
         <div class="seg" id="zoomSeg">${ZOOMS.map((z) => `<button data-z="${z.id}">${z.label}</button>`).join('')}</div>
       </div>
-      <button class="link-btn center" id="skipAll">Accept remaining points &amp; review</button>
+      <button class="link-btn center" id="skipAll">Accept remaining points &amp; continue</button>
+      ${onSkip ? `<button class="btn ghost block skip-btn" id="skipReview">${icon('sparkle', 15)} Skip review — use the AI points &amp; analyze</button>` : ''}
       <div class="vp-foot"><button class="btn ghost" id="back">Back</button><button class="btn blue" id="next">Next</button></div>
     </aside>
   </div>`);
@@ -251,6 +252,7 @@ export function mountVerify(body, app, draft, view, { onBack, onDone }) {
   $('#reset', v).onclick = reset;
   $('#next', v).onclick = next;
   $('#back', v).onclick = prev;
+  if (onSkip) $('#skipReview', v).onclick = () => onSkip();
   $('#skipAll', v).onclick = () => { for (const def of defs) d.confirmed[def.id] = true; d.idx = defs.length - 1; onDone(); };
   // Re-run profile detection forced to the opposite facing direction
   const flipBtn = $('#flip', v);

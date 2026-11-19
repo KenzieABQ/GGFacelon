@@ -587,6 +587,21 @@ export function ratioLabel(s) {
   if (s >= 3.5) return 'Off';
   return 'Far off';
 }
+// Same scale as ratioColor, as solid colours bright enough for lines drawn on a photo (canvas can't use CSS vars)
+export function ratioHex(s) {
+  if (!Number.isFinite(s)) return '#9aa3ae';
+  if (s >= 9) return '#3ddc97';
+  if (s >= 7) return '#a8d84e';
+  if (s >= 4.5) return '#f5b544';
+  return '#ff6b5e';
+}
+export function scoreHex(s) {
+  if (!Number.isFinite(s)) return '#9aa3ae';
+  if (s >= 7) return '#3ddc97';
+  if (s >= 5.5) return '#a8d84e';
+  if (s >= 4) return '#f5b544';
+  return '#ff6b5e';
+}
 // Individual ratios score 10 inside their ideal range, so they use a stricter colour scale
 export function ratioColor(s) {
   if (s >= 9) return 'var(--good)';

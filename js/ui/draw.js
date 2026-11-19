@@ -81,8 +81,15 @@ export function drawCrosshair(ctx, p, { size = 26, gap = 7, color = 'rgba(255,25
 
 // ── measurement overlay ──
 // prims are in the analysis frame; inv maps them back to image px.
+// '#rrggbb' → 'rgba(r,g,b,a)'
+export const withAlpha = (hex, a) => {
+  const h = hex.replace('#', ''), n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+};
+// color: the measurement's score colour, used for its lines, angle wedge, glow and value label
 export function drawOverlay(ctx, st, prims, inv, { progress = 1, text = '', color = COL.mint } = {}) {
   const S = (p) => st.toScreen(inv(p));
+  const glow = withAlpha(color, 0.6), wedge = withAlpha(color, 0.22);
   const e = (k) => Math.min(1, Math.max(0, (progress - k) / (1 - k || 1)));
   const lineP = e(0), labP = e(0.55);
   ctx.save();
@@ -95,7 +102,7 @@ export function drawOverlay(ctx, st, prims, inv, { progress = 1, text = '', colo
       ctx.strokeStyle = pr.dim ? COL.dim : pr.dash ? 'rgba(255,255,255,0.6)' : color;
       ctx.lineWidth = pr.dim || pr.dash ? 1.1 : 2;
       ctx.setLineDash(pr.dash ? [5, 5] : []);
-      if (!pr.dim && !pr.dash) { ctx.shadowColor = 'rgba(94,232,176,0.55)'; ctx.shadowBlur = 8; }
+      if (!pr.dim && !pr.dash) { ctx.shadowColor = glow; ctx.shadowBlur = 10; }
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(bx, by); ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.setLineDash([]);
@@ -117,7 +124,7 @@ export function drawOverlay(ctx, st, prims, inv, { progress = 1, text = '', colo
       const a = S(pr.a), v = S(pr.v), b = S(pr.b);
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      ctx.shadowColor = 'rgba(94,232,176,0.55)'; ctx.shadowBlur = 8;
+      ctx.shadowColor = glow; ctx.shadowBlur = 10;
       ctx.beginPath();
       ctx.moveTo(v.x, v.y); ctx.lineTo(v.x + (a.x - v.x) * lineP, v.y + (a.y - v.y) * lineP);
       ctx.moveTo(v.x, v.y); ctx.lineTo(v.x + (b.x - v.x) * lineP, v.y + (b.y - v.y) * lineP);
@@ -128,7 +135,7 @@ export function drawOverlay(ctx, st, prims, inv, { progress = 1, text = '', colo
       while (d > Math.PI) d -= Math.PI * 2;
       while (d < -Math.PI) d += Math.PI * 2;
       const r = Math.min(30, Math.hypot(a.x - v.x, a.y - v.y) * 0.4, Math.hypot(b.x - v.x, b.y - v.y) * 0.4);
-      ctx.fillStyle = COL.mintSoft;
+      ctx.fillStyle = wedge;
       ctx.beginPath();
       ctx.moveTo(v.x, v.y);
       ctx.arc(v.x, v.y, r, a1, a1 + d * lineP, d < 0);
@@ -155,12 +162,16 @@ export function drawOverlay(ctx, st, prims, inv, { progress = 1, text = '', colo
   }
   if (labelAt && text && labP > 0) {
     ctx.globalAlpha = labP;
-    ctx.font = '600 13px Inter, system-ui, sans-serif';
+    ctx.font = '600 13px Manrope, system-ui, sans-serif';
     const w = ctx.measureText(text).width + 14;
     const x = Math.min(st.w - w / 2 - 6, Math.max(w / 2 + 6, labelAt.x)), y = Math.min(st.h - 16, Math.max(16, labelAt.y));
-    ctx.fillStyle = 'rgba(10,18,16,0.72)';
+    ctx.fillStyle = 'rgba(8,12,14,0.78)';
+    ctx.shadowColor = withAlpha(color, 0.35); ctx.shadowBlur = 12;
     roundRect(ctx, x - w / 2, y - 11, w, 22, 11);
     ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = withAlpha(color, 0.45); ctx.lineWidth = 1;
+    ctx.stroke();
     ctx.fillStyle = color;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
